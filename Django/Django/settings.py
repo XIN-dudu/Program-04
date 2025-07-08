@@ -39,7 +39,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     'corsheaders', # 注册app corsheaders
     'rest_framework',
-    'user',
     "web.apps.WebConfig",
 ]
 
@@ -80,7 +79,7 @@ WSGI_APPLICATION = "Django.wsgi.application"
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',  # 修改成MySQL数据库
-        'NAME': 'Test',  # 连接数据库名称 
+        'NAME': 'program-04',  # 连接数据库名称 
         'USER':'root',  # mysql的用户名
         'PASSWORD':'Xin123456',  # 数据库密码
         'HOST':'122.9.42.250',  # 数据库ip 本地回环地址

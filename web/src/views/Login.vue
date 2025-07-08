@@ -1,61 +1,125 @@
 <!-- 登录 -->
 <!-- src/views/Login.vue -->
 <template>
-    <div class="auth-container">
-      <div class="auth-box">
-        <!-- 登录表单 -->
-        <div v-if="showLogin" class="auth-form login-form">
-          <h2 class="form-title">用户登录</h2>
-          <form @submit.prevent="handleLogin">
-            <div class="form-group">
-              <label>用户名：</label>
-              <input v-model="loginForm.name" type="text" required placeholder="请输入用户名">
-            </div>
-            <div class="form-group">
-              <label>密码：</label>
-              <input v-model="loginForm.password" type="password" required placeholder="请输入密码">
-            </div>
-            <button type="submit" class="submit-btn">
-              <span>登录</span>
-            </button>
-            <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-          </form>
-          <router-link to="/register" class="switch-link">
-            没有账号？立即注册
-          </router-link>
-        </div>
+  <div class="auth-container">
+    <div class="auth-box">
+      <!-- 登录方式切换 -->
+      <div style="text-align:center;margin-bottom:20px;">
+        <button @click="showLogin=true" :class="{active:showLogin}" style="margin-right:10px;">账号密码登录</button>
+        <button @click="showLogin=false" :class="{active:!showLogin}">邮箱验证码登录</button>
+      </div>
+      <!-- 账号密码登录表单 -->
+      <div v-if="showLogin" class="auth-form login-form">
+        <h2 class="form-title">用户登录</h2>
+        <form @submit.prevent="handleLogin">
+          <div class="form-group">
+            <label>用户名：</label>
+            <input v-model="loginForm.name" type="text" required placeholder="请输入用户名">
+          </div>
+          <div class="form-group">
+            <label>密码：</label>
+            <input v-model="loginForm.password" type="password" required placeholder="请输入密码">
+          </div>
+          <button type="submit" class="submit-btn">
+            <span>登录</span>
+          </button>
+        </form>
+        <router-link to="/register" class="switch-link">
+          没有账号？立即注册
+        </router-link>
+      </div>
+      <!-- 邮箱验证码登录表单 -->
+      <div v-else class="auth-form email-login-form">
+        <h2 class="form-title">邮箱登录</h2>
+        <form @submit.prevent="handleEmailLogin">
+          <div class="form-group">
+            <label>邮箱：</label>
+            <input v-model="emailForm.email" type="email" required placeholder="请输入注册邮箱">
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;">
+            <label style="flex:0 0 60px;">验证码：</label>
+            <input v-model="emailForm.code" type="text" required placeholder="请输入验证码" style="flex:1;">
+            <button type="button" @click="sendEmailCode" style="margin-left:10px;">获取验证码</button>
+          </div>
+          <button type="submit" class="submit-btn">
+            <span>登录</span>
+          </button>
+        </form>
       </div>
     </div>
- </template>
+  </div>
+</template>
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router' // 需要导入路由
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 
-const router = useRouter() // 获取路由实例
+const router = useRouter()
 const showLogin = ref(true)
 const loginForm = ref({
   name: '',
   password: ''
 })
+const emailForm = ref({
+  email: '',
+  code: ''
+})
+const errorMessage = ref('')
 
 const handleLogin = async () => {
+  errorMessage.value = ''
   try {
-    // 直接通过 loginForm.value 获取值
     const response = await axios.post('http://localhost:8000/login', {
-      name: loginForm.value.name,
+      username: loginForm.value.name,
       password: loginForm.value.password
     })
     if (response.status === 200) {
-      alert('success')
-      localStorage.setItem('name', loginForm.value.name);
-      router.push('/') // 使用路由实例跳转
+      alert(response.data.msg || '登录成功')
+      localStorage.setItem('name', loginForm.value.name)
+      router.push('/')
     }
   } catch (error) {
-    console.error('登录失败:', error)
-    // 错误处理逻辑
-    //alert('falied')
+    let msg = error.response?.data?.msg || error.message || '登录失败'
+    errorMessage.value = msg
+    alert(msg)
+  }
+}
+
+const sendEmailCode = async () => {
+  if (!emailForm.value.email) {
+    alert('请输入邮箱')
+    return
+  }
+  try {
+    const res = await axios.post('http://localhost:8000/send_email_code', {
+      email: emailForm.value.email
+    })
+    alert(res.data.msg || '验证码已发送')
+  } catch (err) {
+    let msg = err.response?.data?.msg || err.message || '发送失败'
+    alert(msg)
+  }
+}
+
+const handleEmailLogin = async () => {
+  if (!emailForm.value.email || !emailForm.value.code) {
+    alert('请输入邮箱和验证码')
+    return
+  }
+  try {
+    const res = await axios.post('http://localhost:8000/email_login', {
+      email: emailForm.value.email,
+      code: emailForm.value.code
+    })
+    if (res.status === 200) {
+      alert(res.data.msg || '登录成功')
+      localStorage.setItem('email', emailForm.value.email)
+      router.push('/')
+    }
+  } catch (err) {
+    let msg = err.response?.data?.msg || err.message || '登录失败'
+    alert(msg)
   }
 }
 </script>
