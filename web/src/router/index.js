@@ -10,6 +10,7 @@ const routes = [
   { path: '/history', component: () => import('../views/History.vue') },
   { path: '/login', component: () => import('../views/Login.vue') },
   { path: '/register', component: () => import('../views/Register.vue') },
+  { path: '/face-recognition', component: () => import('../views/FaceRecognition.vue') },
 ]
 const router = createRouter({
   history: createWebHistory(),
