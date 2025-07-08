@@ -32,6 +32,8 @@
 
 <script>
 import axios from 'axios';
+import { useRouter } from 'vue-router'
+
 export default {
   name: "Register",
   data() {
@@ -57,6 +59,7 @@ export default {
       }
       this.errorMsg = '';
       this.successMsg = '';
+      this.router = useRouter();
       try {
         const res = await axios.post('http://localhost:8000/register', {
           username: this.form.username,
@@ -65,6 +68,7 @@ export default {
           phone: this.form.phone
         });
         this.successMsg = res.data.msg || '注册成功';
+        this.$router.push('/login');
       } catch (err) {
         console.log('注册失败详细信息:', err.response);
         this.errorMsg = (err.response && err.response.data && (err.response.data.msg || JSON.stringify(err.response.data)))
