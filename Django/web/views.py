@@ -306,4 +306,47 @@ def face_recognition(request):
         return Response({'msg': f'识别过程出错: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     return Response({'msg': '未知错误'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def liveness_detection(request):
+    """活体检测+1对N识别接口，接收图片，调用百度V3接口"""
+    if 'image' not in request.FILES:
+        return Response({'msg': '请上传图片'}, status=status.HTTP_400_BAD_REQUEST)
+    image = request.FILES['image']
+    import base64
+    image_base64 = base64.b64encode(image.read()).decode('utf-8')
+    token = get_baidu_token()
+    if not token:
+        return Response({'msg': '服务暂不可用'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    url = f"https://aip.baidubce.com/rest/2.0/face/v3/search?access_token={token}"
+    data = {
+        "image": image_base64,
+        "image_type": "BASE64",
+        "group_id_list": "user_faces",  # 你的百度人脸库分组ID
+        "liveness_control": "NORMAL",   # 要求做活体检测
+        "quality_control": "NORMAL"
+    }
+    headers = {'Content-Type': 'application/json'}
+    try:
+        response = requests.post(url, data=json.dumps(data), headers=headers)
+        result = response.json()
+        if result.get('error_code') == 0:
+            user_list = result.get('result', {}).get('user_list', [])
+            liveness = result.get('result', {}).get('face_liveness', None)
+            if user_list and len(user_list) > 0:
+                top_user = user_list[0]
+                score = top_user.get('score')
+                return Response({
+                    'msg': '识别成功',
+                    'user': top_user,
+                    'score': score,
+                    'liveness': liveness
+                })
+            else:
+                return Response({'msg': '未识别到已知用户', 'liveness': liveness})
+        else:
+            return Response({'msg': f"识别失败: {result.get('error_msg')}", 'liveness': False})
+    except Exception as e:
+        return Response({'msg': f'检测过程出错: {str(e)}', 'liveness': False})
     
