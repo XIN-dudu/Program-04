@@ -6,7 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import parser_classes
 
 from web.serializers import UserSerializer
-from .models import UserProfile, UserFaceImage
+from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY
 import random
 import smtplib
 from email.mime.text import MIMEText
@@ -15,6 +15,7 @@ import os
 import base64
 import json
 import requests
+import time
 
 # 简单内存验证码存储（生产建议用redis等）
 email_code_cache = {}
@@ -36,12 +37,22 @@ def add_face_to_baidu(image_path, user_id, user_info=None):
     """添加人脸到百度人脸库"""
     token = get_baidu_token()
     if not token:
+        print("获取百度token失败")
         return None
     
     url = f"https://aip.baidubce.com/rest/2.0/face/v3/faceset/user/add?access_token={token}"
     
-    with open(image_path, 'rb') as f:
-        image_base64 = base64.b64encode(f.read()).decode('utf-8')
+    # 尝试通过UserFaceImage模型的image字段自动解密读取
+    user_face = UserFaceImage.objects.filter(image=image_path).first()
+    if user_face:
+        file_obj = user_face.image.open()
+        decrypted_data = file_obj.read()
+        file_obj.close()
+    else:
+        with open(image_path, 'rb') as f:
+            encrypted_data = f.read()
+        decrypted_data = aes_decrypt_image(encrypted_data, AES_KEY)
+    image_base64 = base64.b64encode(decrypted_data).decode('utf-8')
     
     data = {
         "image": image_base64,
@@ -53,6 +64,7 @@ def add_face_to_baidu(image_path, user_id, user_info=None):
     
     headers = {'Content-Type': 'application/json'}
     response = requests.post(url, data=json.dumps(data), headers=headers)
+    print("百度人脸注册返回：", response.text)  # 新增日志打印
     
     if response.status_code == 200:
         result = response.json()
@@ -69,7 +81,7 @@ def get_data(request):
         serializer = UserSerializer(user, many=True)
         return Response(serializer.data)
     if request.method == 'POST':
-        print("fdawhdjiwajdawj")
+        # print("fdawhdjiwajdawj")
         serializer = UserSerializer(data = request.data)
         print(serializer)
         return Response(status=status.HTTP_200_OK)
@@ -134,13 +146,11 @@ def register(request):
     for image in face_images:
         user_face = UserFaceImage(user=user, image=image)
         user_face.save()
-        
-        # 获取保存后的图片路径
         image_path = user_face.image.path
-        
         # 上传到百度人脸库（如果配置了百度API）
         if all([BAIDU_API_KEY, BAIDU_SECRET_KEY, BAIDU_APP_ID]) and BAIDU_API_KEY != "你的百度云API Key":
             try:
+                time.sleep(1)  # 每次上传前等待1秒，防止QPS超限
                 face_token = add_face_to_baidu(
                     image_path, 
                     user.id, 
@@ -151,12 +161,12 @@ def register(request):
                     user_face.save()
             except Exception as e:
                 print(f"上传到百度人脸库失败: {e}")
-        # 上传后删除本地图片
-        try:
-            if os.path.exists(image_path):
-                os.remove(image_path)
-        except Exception as e:
-            print(f"删除本地图片失败: {e}")
+        # 上传后删除本地图片（已注释，保留本地图片文件）
+        # try:
+        #     if os.path.exists(image_path):
+        #         os.remove(image_path)
+        # except Exception as e:
+        #     print(f"删除本地图片失败: {e}")
     
     return Response({'msg': '注册成功'}, status=status.HTTP_201_CREATED)
 
@@ -306,4 +316,98 @@ def face_recognition(request):
         return Response({'msg': f'识别过程出错: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     return Response({'msg': '未知错误'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def liveness_detection(request):
+    """活体检测+1对N识别接口，接收图片，调用百度V3接口"""
+    if 'image' not in request.FILES:
+        return Response({'msg': '请上传图片'}, status=status.HTTP_400_BAD_REQUEST)
+    image = request.FILES['image']
+    import base64
+    image_base64 = base64.b64encode(image.read()).decode('utf-8')
+    token = get_baidu_token()
+    if not token:
+        return Response({'msg': '服务暂不可用'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    url = f"https://aip.baidubce.com/rest/2.0/face/v3/search?access_token={token}"
+    data = {
+        "image": image_base64,
+        "image_type": "BASE64",
+        "group_id_list": "user_faces",  # 你的百度人脸库分组ID
+        "liveness_control": "NORMAL",   # 要求做活体检测
+        "quality_control": "NORMAL"
+    }
+    headers = {'Content-Type': 'application/json'}
+    try:
+        response = requests.post(url, data=json.dumps(data), headers=headers)
+        result = response.json()
+        if result.get('error_code') == 0:
+            user_list = result.get('result', {}).get('user_list', [])
+            liveness = result.get('result', {}).get('face_liveness', None)
+            if user_list and len(user_list) > 0:
+                top_user = user_list[0]
+                baidu_user_id = top_user.get('user_id')
+                score = top_user.get('score')
+                # 通过face_id查本地用户名
+                try:
+                    user = UserProfile.objects.get(face_id=baidu_user_id)
+                    username = user.username
+                except UserProfile.DoesNotExist:
+                    username = None
+                return Response({
+                    'msg': '识别成功',
+                    'user': {
+                        'username': username,
+                        'baidu_user_id': baidu_user_id
+                    },
+                    'score': score,
+                    'liveness': liveness
+                })
+            else:
+                return Response({'msg': '未识别到已知用户', 'liveness': liveness})
+        else:
+            return Response({'msg': f"识别失败: {result.get('error_msg')}", 'liveness': False})
+    except Exception as e:
+        return Response({'msg': f'检测过程出错: {str(e)}', 'liveness': False})
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def liveness_check(request):
+    """活体检测接口，接收视频，调用百度H5 API"""
+    if 'video' not in request.FILES:
+        return Response({'msg': '请上传视频', 'raw': None}, status=status.HTTP_400_BAD_REQUEST)
+    video = request.FILES['video']
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as temp:
+        temp_path = temp.name
+        for chunk in video.chunks():
+            temp.write(chunk)
+    # 读取视频内容并转base64
+    with open(temp_path, 'rb') as f:
+        video_base64 = base64.b64encode(f.read()).decode('utf-8')
+    token = get_baidu_token()
+    if not token:
+        os.unlink(temp_path)
+        return Response({'msg': '活体检测服务暂不可用', 'raw': None}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    url = f"https://aip.baidubce.com/rest/2.0/face/v1/faceliveness/verify?access_token={token}"
+    data = {
+        "video_base64": video_base64
+    }
+    headers = {'Content-Type': 'application/json'}
+    try:
+        response = requests.post(url, data=json.dumps(data), headers=headers)
+        os.unlink(temp_path)
+        try:
+            result = response.json()
+        except Exception as e:
+            return Response({'liveness': False, 'msg': f'API返回内容无法解析为JSON: {str(e)}', 'raw': response.text})
+        if not isinstance(result, dict):
+            return Response({'liveness': False, 'msg': 'API返回内容不是字典', 'raw': str(result)})
+        if result.get('error_code') == 0 and result.get('result', {}).get('score', 0) > 0.8:
+            return Response({'liveness': True, 'msg': '活体检测通过', 'raw': result})
+        else:
+            score = result.get('result', {}).get('score', 0) if result.get('result') else 0
+            return Response({'liveness': False, 'msg': f"活体检测未通过，分数：{score:.2f}", 'raw': result})
+    except Exception as e:
+        return Response({'liveness': False, 'msg': f'检测过程出错: {str(e)}', 'raw': None})
     

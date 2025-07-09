@@ -20,6 +20,9 @@
           <router-link to="/face-recognition" class="logo-text">人脸识别</router-link>
         </div>
         <div>
+          <router-link to="/liveness" class="logo-text">活体检测</router-link>
+        </div>
+        <div>
           <router-link to="/login" class="logo-text">登录</router-link>
         </div>
       </div>
