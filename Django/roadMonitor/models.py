@@ -26,32 +26,26 @@ class alarmEvents(models.Model):
     )
     user_id = models.ForeignKey("web.UserProfile",on_delete=models.CASCADE)
 
-# class roadRecord(models.Model):
-#     disease_id = models.AutoField(primary_key=True)
-#     detection_time = models.DateTimeField(auto_now_add=True)
-#     DISEASE_TYPE_CHOICES = [
-#         (1, '纵向裂缝'),
-#         (2, '横向裂缝'),
-#         (3, '龟裂'),
-#         (4, '坑洼'),
-#     ]
-#     disease_type = models.IntegerField(choices=DISEASE_TYPE_CHOICES, null=False, blank=False)
-#     length = models.FloatField()
-#     area = models.FloatField()
-#     SEVERITY_CHOICES = [
-#         (1, 'LOW'),
-#         (2, 'MEDIUM'),
-#         (3, 'HIGH'),    
-#     ]
-#     severity = models.IntegerField(choices=SEVERITY_CHOICES, null=False, blank=False)
-#     path = models.CharField(max_length=255)
-#     position = models.PointField(
-#         verbose_name='地理位置',
-#         srid=4326,  # 使用WGS84坐标系
-#         null=False,
-#         blank=False,
-#         spatial_index=True  # 创建空间索引
-#     )
+class roadRecord(models.Model):
+    disease_id = models.AutoField(primary_key=True)
+    detection_time = models.DateTimeField(auto_now_add=True)
+    DISEASE_TYPE_CHOICES = [
+        (1, '纵向裂缝'),
+        (2, '横向裂缝'),
+        (3, '龟裂'),
+        (4, '坑洼'),
+    ]
+    disease_type = models.IntegerField(choices=DISEASE_TYPE_CHOICES, null=False, blank=False)
+    length = models.FloatField()
+    area = models.FloatField()
+    SEVERITY_CHOICES = [
+        (1, 'LOW'),
+        (2, 'MEDIUM'),
+        (3, 'HIGH'),    
+    ]
+    severity = models.IntegerField(choices=SEVERITY_CHOICES, null=False, blank=False)
+    path = models.CharField(max_length=100)
+    
 
 
 

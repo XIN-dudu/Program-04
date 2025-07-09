@@ -81,7 +81,7 @@ def get_data(request):
         serializer = UserSerializer(user, many=True)
         return Response(serializer.data)
     if request.method == 'POST':
-        print("fdawhdjiwajdawj")
+        # print("fdawhdjiwajdawj")
         serializer = UserSerializer(data = request.data)
         print(serializer)
         return Response(status=status.HTTP_200_OK)
