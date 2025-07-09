@@ -20,7 +20,6 @@ import requests
 email_code_cache = {}
 
 # 百度人脸识别API配置
-# 下面的值需要替换为你的百度云API信息
 BAIDU_API_KEY = "NypddVrKw1QSvISLwoEtmUfT" 
 BAIDU_SECRET_KEY = "VTfOhjLs9Bq0taXoJKoWdfLlJZ4NUkeR"
 BAIDU_APP_ID = "119454489"
@@ -152,6 +151,12 @@ def register(request):
                     user_face.save()
             except Exception as e:
                 print(f"上传到百度人脸库失败: {e}")
+        # 上传后删除本地图片
+        try:
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        except Exception as e:
+            print(f"删除本地图片失败: {e}")
     
     return Response({'msg': '注册成功'}, status=status.HTTP_201_CREATED)
 
