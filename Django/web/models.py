@@ -19,7 +19,7 @@ def user_face_path(instance, filename):
 
 # AES密钥（16/24/32字节），实际部署时请安全存储
 AES_KEY = b'\x8f\x1a\x9c\x8e\x1b\x8d\x1e\x8f\x1a\x9c\x8e\x1b\x8d\x1e\x8f\x1a'  # 自动生成的16字节密钥
-
+# AES加密
 def aes_encrypt_image(image_bytes, key):
     cipher = AES.new(key, AES.MODE_EAX)
     ciphertext, tag = cipher.encrypt_and_digest(image_bytes)

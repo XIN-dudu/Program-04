@@ -11,6 +11,7 @@ const routes = [
   { path: '/login', component: () => import('../views/Login.vue') },
   { path: '/register', component: () => import('../views/Register.vue') },
   { path: '/face-recognition', component: () => import('../views/FaceRecognition.vue') },
+  { path: '/liveness', component: () => import('../views/LivenessDetection.vue') },
 ]
 const router = createRouter({
   history: createWebHistory(),
