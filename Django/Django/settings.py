@@ -40,7 +40,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     'corsheaders', # 注册app corsheaders
     'rest_framework',
+    'drf_yasg',
     "web.apps.WebConfig",
+    "roadMonitor.apps.RoadmonitorConfig",
 ]
 
 MIDDLEWARE = [
@@ -137,3 +139,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_HEADERS = ('*')
+
+# 可选：Swagger 自定义配置 
+SWAGGER_SETTINGS = {
+    'SECURITY_DEFINITIONS': {
+        'basic': {'type': 'basic'}
+    },
+    'JSON_EDITOR': True,  # 启用 JSON 输入框 
+    'OPERATIONS_SORTER': 'alpha'  # 接口按字母排序 
+}
