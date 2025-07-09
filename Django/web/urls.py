@@ -9,4 +9,5 @@ urlpatterns = [
     path('email_login', views.email_login),#邮箱登录
     path('face_recognition', views.face_recognition),
     path('liveness_detection', views.liveness_detection),
+    path('liveness_check', views.liveness_check),
 ]
