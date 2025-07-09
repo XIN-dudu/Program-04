@@ -16,6 +16,10 @@ import base64
 import json
 import requests
 import time
+import io
+from PIL import Image, ImageDraw, ImageFont
+from django.http import JsonResponse
+import string
 
 # 简单内存验证码存储（生产建议用redis等）
 email_code_cache = {}
@@ -77,7 +81,7 @@ def add_face_to_baidu(image_path, user_id, user_info=None):
 @api_view(['GET', 'POST'])
 def get_data(request):
     if request.method == 'GET':
-        user = User.objects.all()
+        user = UserProfile.objects.all()
         serializer = UserSerializer(user, many=True)
         return Response(serializer.data)
     if request.method == 'POST':
@@ -89,8 +93,8 @@ def get_data(request):
 @api_view(['GET', 'PUT', 'DELETE'])
 def user_detail(request, id):
     try:
-        user = User.objects.get(id = id)
-    except User.DoesNotExist:
+        user = UserProfile.objects.get(id = id)
+    except UserProfile.DoesNotExist:
         return Response(status=status.HTTP_404_NOT_FOUND)
     if request.method == 'GET':
         serializer = UserSerializer(user)
@@ -410,4 +414,75 @@ def liveness_check(request):
             return Response({'liveness': False, 'msg': f"活体检测未通过，分数：{score:.2f}", 'raw': result})
     except Exception as e:
         return Response({'liveness': False, 'msg': f'检测过程出错: {str(e)}', 'raw': None})
+
+@api_view(['GET'])
+def click_captcha(request):
+    # 生成6个随机汉字
+    hanzi_list = list('的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今集温传土许步群广石记需段研界拉林律叫且究观越织装影算低持音众书布复容儿须际商非验连断深难近矿千周委素技备半办青省列习便响约支般史感劳便团往酸历市克何除消构府称太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价严龙飞'
+    )
+    hanzi = random.sample(hanzi_list, 6)
+    target_hanzi = random.sample(hanzi, 4)
+
+    # 生成图片
+    width, height = 320, 100
+    image = Image.new('RGB', (width, height), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    #
+    font_path = os.path.join(os.path.dirname(__file__), 'STXINWEI.TTF')
+    font = ImageFont.truetype(font_path, 36)
+    positions = []
+    for i, word in enumerate(hanzi):
+        x = 30 + i * 45 + random.randint(-5, 5)
+        y = 30 + random.randint(-10, 10)
+        draw.text((x, y), word, font=font, fill=(0, 0, 0))
+        positions.append({'word': word, 'x': x, 'y': y, 'w': 36, 'h': 36})
+
+    # 编码图片
+    buf = io.BytesIO()
+    image.save(buf, format='PNG')
+    img_base64 = base64.b64encode(buf.getvalue()).decode()
+
+    # 生成验证码ID
+    captcha_id = str(int(time.time() * 1000)) + str(random.randint(1000, 9999))
+    # 保存到session
+    request.session['click_captcha_%s' % captcha_id] = {
+        'targets': target_hanzi,
+        'positions': positions,
+        'timestamp': time.time()
+    }
+    request.session.modified = True
+
+    return JsonResponse({
+        'captcha_id': captcha_id,
+        'image': img_base64,
+        'targets': target_hanzi
+    })
+
+
+@api_view(['POST'])
+def click_captcha_verify(request):
+    captcha_id = request.data.get('captcha_id')
+    clicks = request.data.get('clicks')  # [{x: , y: }, ...]
+    if not captcha_id or not clicks or len(clicks) != 4:
+        return Response({'msg': '参数错误'}, status=400)
+    session_key = 'click_captcha_%s' % captcha_id
+    captcha_data = request.session.get(session_key)
+    if not captcha_data:
+        return Response({'msg': '验证码已过期'}, status=400)
+    targets = captcha_data['targets']
+    positions = captcha_data['positions']
+    # 依次校验点击是否落在目标汉字区域
+    checked = 0
+    for i, target in enumerate(targets):
+        for pos in positions:
+            if pos['word'] == target:
+                x0, y0, w, h = pos['x'], pos['y'], pos['w'], pos['h']
+                x, y = clicks[i]['x'], clicks[i]['y']
+                if x0 <= x <= x0 + w and y0 <= y <= y0 + h:
+                    checked += 1
+                break
+    if checked == 4:
+        return Response({'msg': 'success'})
+    else:
+        return Response({'msg': 'fail'}, status=400)
     

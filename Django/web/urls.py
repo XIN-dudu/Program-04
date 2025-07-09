@@ -10,4 +10,6 @@ urlpatterns = [
     path('face_recognition', views.face_recognition),
     path('liveness_detection', views.liveness_detection),
     path('liveness_check', views.liveness_check),
+    path('click_captcha/', views.click_captcha),
+    path('click_captcha/verify/', views.click_captcha_verify),
 ]

@@ -91,6 +91,7 @@ export default {
       }
     },
     // 活体检测相关
+    //暂时注释（由于API限制，次数有限）
     startRecording() {
       // 注释掉录制功能，让按钮无效
       // this.videoChunks = [];

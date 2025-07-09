@@ -20,6 +20,16 @@
             <label>密码：</label>
             <input v-model="loginForm.password" type="password" required placeholder="请输入密码">
           </div>
+          <!-- 点选验证码区域 -->
+          <div class="form-group" v-if="captchaImg">
+            <label>请依次点击下列文字：</label>
+            <span style="color:#d9534f;font-weight:bold;">{{ captchaTargets.join('、') }}</span>
+            <div style="margin:10px 0;position:relative;width:320px;height:100px;border:1px solid #ccc;">
+              <img :src="'data:image/png;base64,'+captchaImg" @click="handleCaptchaClick" style="width:320px;height:100px;cursor:pointer;"/>
+              <span v-for="(pt, idx) in captchaClicks" :key="idx" :style="{position:'absolute',left:pt.x-10+'px',top:pt.y-10+'px',width:'20px',height:'20px',background:'#00a1d6',color:'#fff',borderRadius:'50%',textAlign:'center',lineHeight:'20px',fontSize:'14px',pointerEvents:'none'}">{{ idx+1 }}</span>
+            </div>
+            <button type="button" @click="refreshCaptcha" style="margin-top:5px;">刷新验证码</button>
+          </div>
           <button type="submit" class="submit-btn">
             <span>登录</span>
           </button>
@@ -39,7 +49,17 @@
           <div class="form-group" style="display:flex;align-items:center;">
             <label style="flex:0 0 60px;">验证码：</label>
             <input v-model="emailForm.code" type="text" required placeholder="请输入验证码" style="flex:1;">
-            <button type="button" @click="sendEmailCode" style="margin-left:10px;">获取验证码</button>
+            <button type="button" @click="handleSendEmailCode" style="margin-left:10px;">获取验证码</button>
+          </div>
+          <!-- 点选验证码区域（与账号密码登录共用） -->
+          <div class="form-group" v-if="captchaImg">
+            <label>请依次点击下列文字：</label>
+            <span style="color:#d9534f;font-weight:bold;">{{ captchaTargets.join('、') }}</span>
+            <div style="margin:10px 0;position:relative;width:320px;height:100px;border:1px solid #ccc;">
+              <img :src="'data:image/png;base64,'+captchaImg" @click="handleCaptchaClick" style="width:320px;height:100px;cursor:pointer;"/>
+              <span v-for="(pt, idx) in captchaClicks" :key="'email-'+idx" :style="{position:'absolute',left:pt.x-10+'px',top:pt.y-10+'px',width:'20px',height:'20px',background:'#00a1d6',color:'#fff',borderRadius:'50%',textAlign:'center',lineHeight:'20px',fontSize:'14px',pointerEvents:'none'}">{{ idx+1 }}</span>
+            </div>
+            <button type="button" @click="refreshCaptcha" style="margin-top:5px;">刷新验证码</button>
           </div>
           <button type="submit" class="submit-btn">
             <span>登录</span>
@@ -51,7 +71,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
@@ -67,9 +87,54 @@ const emailForm = ref({
 })
 const errorMessage = ref('')
 
+const captchaImg = ref('')
+const captchaTargets = ref([])
+const captchaId = ref('')
+const captchaClicks = ref([])
+
+const fetchCaptcha = async () => {
+  const res = await axios.get('http://localhost:8000/click_captcha/', { withCredentials: true })
+  captchaImg.value = res.data.image
+  captchaTargets.value = res.data.targets
+  captchaId.value = res.data.captcha_id
+  captchaClicks.value = []
+}
+const refreshCaptcha = () => {
+  fetchCaptcha()
+}
+const handleCaptchaClick = (e) => {
+  if (captchaClicks.value.length >= 4) return
+  const rect = e.target.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+  captchaClicks.value.push({x: Math.round(x), y: Math.round(y)})
+}
+onMounted(() => {
+  fetchCaptcha()
+})
+
 const handleLogin = async () => {
   errorMessage.value = ''
+  if (captchaClicks.value.length !== 4) {
+    alert('请依次点击4个目标文字')
+    return
+  }
   try {
+    // 校验验证码
+    const verifyRes = await axios.post(
+      'http://localhost:8000/click_captcha/verify/',
+      {
+        captcha_id: captchaId.value,
+        clicks: captchaClicks.value
+      },
+      { withCredentials: true }
+    )
+    if (verifyRes.data.msg !== 'success') {
+      alert('验证码错误，请重试')
+      fetchCaptcha()
+      return
+    }
+    // 验证码通过后再登录
     const response = await axios.post('http://localhost:8000/login', {
       username: loginForm.value.name,
       password: loginForm.value.password
@@ -83,22 +148,40 @@ const handleLogin = async () => {
     let msg = error.response?.data?.msg || error.message || '登录失败'
     errorMessage.value = msg
     alert(msg)
+    fetchCaptcha()
   }
 }
 
-const sendEmailCode = async () => {
-  if (!emailForm.value.email) {
-    alert('请输入邮箱')
+// 新增邮箱验证码校验逻辑
+const handleSendEmailCode = async () => {
+  if (captchaClicks.value.length !== 4) {
+    alert('请依次点击4个目标文字')
     return
   }
   try {
+    // 校验点选验证码
+    const verifyRes = await axios.post(
+      'http://localhost:8000/click_captcha/verify/',
+      {
+        captcha_id: captchaId.value,
+        clicks: captchaClicks.value
+      },
+      { withCredentials: true }
+    )
+    if (verifyRes.data.msg !== 'success') {
+      alert('验证码错误，请重试')
+      fetchCaptcha()
+      return
+    }
+    // 验证码通过后再发送邮箱验证码
     const res = await axios.post('http://localhost:8000/send_email_code', {
       email: emailForm.value.email
-    })
+    }, { withCredentials: true })
     alert(res.data.msg || '验证码已发送')
   } catch (err) {
     let msg = err.response?.data?.msg || err.message || '发送失败'
     alert(msg)
+    fetchCaptcha()
   }
 }
 
@@ -107,11 +190,30 @@ const handleEmailLogin = async () => {
     alert('请输入邮箱和验证码')
     return
   }
+  if (captchaClicks.value.length !== 4) {
+    alert('请依次点击4个目标文字')
+    return
+  }
   try {
+    // 校验点选验证码
+    const verifyRes = await axios.post(
+      'http://localhost:8000/click_captcha/verify/',
+      {
+        captcha_id: captchaId.value,
+        clicks: captchaClicks.value
+      },
+      { withCredentials: true }
+    )
+    if (verifyRes.data.msg !== 'success') {
+      alert('验证码错误，请重试')
+      fetchCaptcha()
+      return
+    }
+    // 验证码通过后再邮箱登录
     const res = await axios.post('http://localhost:8000/email_login', {
       email: emailForm.value.email,
       code: emailForm.value.code
-    })
+    }, { withCredentials: true })
     if (res.status === 200) {
       alert(res.data.msg || '登录成功')
       localStorage.setItem('email', emailForm.value.email)
@@ -120,6 +222,7 @@ const handleEmailLogin = async () => {
   } catch (err) {
     let msg = err.response?.data?.msg || err.message || '登录失败'
     alert(msg)
+    fetchCaptcha()
   }
 }
 </script>
