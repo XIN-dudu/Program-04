@@ -158,32 +158,32 @@ def register(request):
     )
     user.save()
     
-    # 保存所有人脸图片
+    # 保存所有人脸图片，只保存有face_token的
+    success_faces = []
     for image in face_images:
         user_face = UserFaceImage(user=user, image=image)
         user_face.save()
         image_path = user_face.image.path
-        # 上传到百度人脸库（如果配置了百度API）
+        face_token = None
         if all([BAIDU_API_KEY, BAIDU_SECRET_KEY, BAIDU_APP_ID]) and BAIDU_API_KEY != "你的百度云API Key":
             try:
-                time.sleep(1)  # 每次上传前等待1秒，防止QPS超限
                 face_token = add_face_to_baidu(
                     image_path, 
                     user.id, 
                     f"{{'username': '{username}', 'email': '{email}'}}"
                 )
-                if face_token:
-                    user_face.face_token = face_token
-                    user_face.save()
             except Exception as e:
                 print(f"上传到百度人脸库失败: {e}")
-        # 上传后删除本地图片（已注释，保留本地图片文件）
-        # try:
-        #     if os.path.exists(image_path):
-        #         os.remove(image_path)
-        # except Exception as e:
-        #     print(f"删除本地图片失败: {e}")
-    
+        if face_token:
+            user_face.face_token = face_token
+            user_face.save()
+            success_faces.append(user_face)
+        else:
+            user_face.delete()  # 删除未同步成功的图片
+    # 注册结束后判断
+    if not success_faces:
+        user.delete()  # 删除用户
+        return Response({'msg': '人脸图片未能成功同步到百度云，请重试'}, status=500)
     return Response({'msg': '注册成功'}, status=status.HTTP_201_CREATED)
 
 # 登录接口
@@ -675,4 +675,41 @@ def points_api(request):
         for _, row in result.iterrows()
     ]
     return Response(data)
+    
+@api_view(['POST'])
+def face_verify_one_to_one(request):
+    """1:1人脸比对接口：当前用户主头像face_token vs 现场图片base64"""
+    username = request.data.get('username') or request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录，无法比对'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    # 获取主头像face_token
+    main_face = user.face_images.first()  # 取第一张人脸图片
+    if not main_face or not main_face.face_token:
+        return Response({'msg': '用户主头像未同步到百度云或未注册face_token'}, status=400)
+    if 'image' not in request.FILES:
+        return Response({'msg': '请上传现场图片'}, status=400)
+    img2 = request.FILES['image']
+    img2_base64 = base64.b64encode(img2.read()).decode()
+    # 用face_token和base64做比对
+    url = f"https://aip.baidubce.com/rest/2.0/face/v3/match?access_token={get_baidu_token()}"
+    headers = {'Content-Type': 'application/json'}
+    data = [
+        {"image": main_face.face_token, "image_type": "FACE_TOKEN", "face_type": "LIVE", "quality_control": "LOW", "liveness_control": "NORMAL"},
+        {"image": img2_base64, "image_type": "BASE64", "face_type": "LIVE", "quality_control": "LOW", "liveness_control": "NORMAL"}
+    ]
+    try:
+        resp = requests.post(url, data=json.dumps(data), headers=headers)
+        result = resp.json()
+        if result.get('error_code') == 0:
+            score = result['result']['score']
+            passed = score >= 80
+            return Response({'msg': '比对成功', 'score': score, 'passed': passed})
+        else:
+            return Response({'msg': f"比对失败: {result.get('error_msg')}", 'raw': result}, status=400)
+    except Exception as e:
+        return Response({'msg': f'比对过程出错: {str(e)}'}, status=500)
     
