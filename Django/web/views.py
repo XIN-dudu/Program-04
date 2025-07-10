@@ -4,6 +4,7 @@ from rest_framework.decorators import api_view
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import parser_classes
+from django.views.decorators.csrf import csrf_exempt
 
 from web.serializers import UserSerializer
 from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY
@@ -541,4 +542,62 @@ def check_email_available(request):
     if UserProfile.objects.filter(email=email).exclude(username=username).exists():
         return Response({'available': False, 'msg': '该邮箱已被其他用户绑定'}, status=200)
     return Response({'available': True, 'msg': '邮箱可用'}, status=200)
+
+@api_view(['GET'])
+@csrf_exempt
+def user_list(request):
+    users = UserProfile.objects.all()
+    data = [
+        {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'permission': user.permission
+        }
+        for user in users
+    ]
+    return JsonResponse({'users': data})
+
+@api_view(['POST'])
+@csrf_exempt
+def delete_user(request):
+    user_id = request.data.get('user_id')
+    try:
+        user = UserProfile.objects.get(id=user_id)
+        # 先删除百度云人脸库信息
+        token = get_baidu_token()
+        if token:
+            url = f"https://aip.baidubce.com/rest/2.0/face/v3/faceset/user/delete?access_token={token}"
+            data = {
+                "group_id": "user_faces",
+                "user_id": str(user.id)
+            }
+            headers = {'Content-Type': 'application/json'}
+            try:
+                resp = requests.post(url, data=json.dumps(data), headers=headers)
+                print("百度人脸库删除返回：", resp.text)
+            except Exception as e:
+                print(f"调用百度云删除用户失败: {e}")
+        # 本地删除用户及人脸记录
+        user.delete()  # 级联删除UserFaceImage
+        return JsonResponse({'msg': '用户及人脸记录已删除（含百度云）'})
+    except UserProfile.DoesNotExist:
+        return JsonResponse({'msg': '用户不存在'}, status=404)
+    except Exception as e:
+        return JsonResponse({'msg': f'删除失败: {str(e)}'}, status=500)
+    
+@api_view(['POST'])
+@csrf_exempt
+def update_permission(request):
+    user_id = request.data.get('user_id')
+    permission = request.data.get('permission')
+    try:
+        user = UserProfile.objects.get(id=user_id)
+        user.permission = int(permission)
+        user.save()
+        return JsonResponse({'msg': '权限修改成功'})
+    except UserProfile.DoesNotExist:
+        return JsonResponse({'msg': '用户不存在'}, status=404)
+    except Exception as e:
+        return JsonResponse({'msg': f'修改失败: {str(e)}'}, status=500)
     

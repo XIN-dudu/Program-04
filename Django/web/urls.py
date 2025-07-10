@@ -14,4 +14,7 @@ urlpatterns = [
     path('click_captcha/verify/', views.click_captcha_verify),
     path('update_profile/', views.update_profile),
     path('check_email_available/', views.check_email_available),
+    path('api/user_list/', views.user_list),
+    path('api/update_permission/', views.update_permission),
+    path('api/delete_user/', views.delete_user),
 ]

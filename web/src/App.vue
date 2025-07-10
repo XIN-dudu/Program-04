@@ -23,6 +23,7 @@
           <router-link to="/liveness" class="logo-text">活体检测</router-link>
         </div>
         <div class="user-section">
+          <router-link to="/user-manage" class="logo-text" style="margin-right:18px;">用户管理</router-link>
           <span class="username clickable" @click="showEdit = true">{{ username }}</span>
           <button @click="logout" class="logout-btn">退出</button>
         </div>
