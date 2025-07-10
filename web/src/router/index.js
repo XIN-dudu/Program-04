@@ -6,7 +6,28 @@ const routes = [
   { path: '/', component: () => import('../views/Login.vue') },
   { path: '/home', component: () => import('../views/Info.vue'), meta: { requiresAuth: true } },
   { path: '/monitor', component: () => import('../views/MonitorRoad.vue'), meta: { requiresAuth: true } },
-  { path: '/urbanTraffic', component: () => import('../views/UrbanTraffic.vue'), meta: { requiresAuth: true } },
+  {
+    path: '/urbanTraffic',
+    component: () => import('@/views/UrbanTraffic.vue'),
+    children: [
+      {
+        path: 'trajectory',
+        component: () => import('@/views/urbanTraffic/Trajectory.vue')
+      },
+      {
+        path: 'hotspot',
+        component: () => import('@/views/urbanTraffic/Hotspot.vue')
+      },
+      {
+        path: 'weekflow',
+        component: () => import('@/views/urbanTraffic/Weekflow.vue')
+      },
+      {
+        path: 'road',
+        component: () => import('@/views/urbanTraffic/Road.vue')
+      }
+    ]
+  },
   { path: '/history', component: () => import('../views/History.vue'), meta: { requiresAuth: true } },
   { path: '/login', component: () => import('../views/Login.vue') },
   { path: '/register', component: () => import('../views/Register.vue') },
