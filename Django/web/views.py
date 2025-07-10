@@ -167,6 +167,10 @@ def register(request):
         face_token = None
         if all([BAIDU_API_KEY, BAIDU_SECRET_KEY, BAIDU_APP_ID]) and BAIDU_API_KEY != "你的百度云API Key":
             try:
+<<<<<<< Updated upstream
+=======
+                time.sleep(0.2)
+>>>>>>> Stashed changes
                 face_token = add_face_to_baidu(
                     image_path, 
                     user.id, 
@@ -675,6 +679,43 @@ def points_api(request):
         for _, row in result.iterrows()
     ]
     return Response(data)
+    
+@api_view(['POST'])
+def face_verify_one_to_one(request):
+    """1:1人脸比对接口：当前用户主头像face_token vs 现场图片base64"""
+    username = request.data.get('username') or request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录，无法比对'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    # 获取主头像face_token
+    main_face = user.face_images.first()  # 取第一张人脸图片
+    if not main_face or not main_face.face_token:
+        return Response({'msg': '用户主头像未同步到百度云或未注册face_token'}, status=400)
+    if 'image' not in request.FILES:
+        return Response({'msg': '请上传现场图片'}, status=400)
+    img2 = request.FILES['image']
+    img2_base64 = base64.b64encode(img2.read()).decode()
+    # 用face_token和base64做比对
+    url = f"https://aip.baidubce.com/rest/2.0/face/v3/match?access_token={get_baidu_token()}"
+    headers = {'Content-Type': 'application/json'}
+    data = [
+        {"image": main_face.face_token, "image_type": "FACE_TOKEN", "face_type": "LIVE", "quality_control": "LOW", "liveness_control": "NORMAL"},
+        {"image": img2_base64, "image_type": "BASE64", "face_type": "LIVE", "quality_control": "LOW", "liveness_control": "NORMAL"}
+    ]
+    try:
+        resp = requests.post(url, data=json.dumps(data), headers=headers)
+        result = resp.json()
+        if result.get('error_code') == 0:
+            score = result['result']['score']
+            passed = score >= 80
+            return Response({'msg': '比对成功', 'score': score, 'passed': passed})
+        else:
+            return Response({'msg': f"比对失败: {result.get('error_msg')}", 'raw': result}, status=400)
+    except Exception as e:
+        return Response({'msg': f'比对过程出错: {str(e)}'}, status=500)
     
 @api_view(['POST'])
 def face_verify_one_to_one(request):
