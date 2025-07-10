@@ -54,6 +54,7 @@
 </template>
 
 <script setup>
+import axios from 'axios'
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
 
 const roadId = ref('')
@@ -105,7 +106,7 @@ const openCamera = () => {
           }
         })
 
-        // 设置自动关闭定时器（可选）
+        // 设置自动关闭定时器
         clearTimeout(autoStopTimer)
         autoStopTimer = setTimeout(() => {
           alert('摄像头使用时间到，自动关闭')
@@ -114,10 +115,9 @@ const openCamera = () => {
       })
       .catch(error => {
         console.error('摄像头访问失败:', error)
-        // alert('无法访问摄像头，请检查权限或使用上传功能。')
       })
   } else {
-    alert('当前浏览器不支持摄像头访问')
+    //alert('当前浏览器不支持摄像头访问')
   }
 }
 
@@ -173,7 +173,6 @@ const startRecording = () => {
   recording.value = true
 }
 
-
 const stopRecording = () => {
   if (mediaRecorder.value && recording.value) {
     mediaRecorder.value.stop()
@@ -181,6 +180,10 @@ const stopRecording = () => {
 
     mediaRecorder.value.onstop = () => {
       const blob = new Blob(recordedChunks.value, { type: 'video/webm' })
+      const file = new File([blob], `recording_${Date.now()}.webm`, {
+        type: 'video/webm'
+      });
+      selectedFile.value = file
       const url = URL.createObjectURL(blob)
       recordedVideoUrl.value = url
 
@@ -193,7 +196,6 @@ const stopRecording = () => {
         videoElement.value.play()
       }
 
-      //标记类型
       isVideo.value = true
       isImage.value = false
       videoActive.value = false
@@ -214,13 +216,14 @@ const takePhoto = () => {
   isVideo.value = false
   videoActive.value = false
   
+  
   const video = videoElement.value
+  selectedFile.value = video
   const canvas = document.createElement('canvas')
   canvas.width = video.videoWidth || 640
   canvas.height = video.videoHeight || 480
   const ctx = canvas.getContext('2d')
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
   const dataUrl = canvas.toDataURL('image/png')
   photoDataUrl.value = dataUrl
 
@@ -232,10 +235,21 @@ const takePhoto = () => {
     videoElement.value.load()
   }
 
-  //设置图片预览（主展示区域）
+  //设置图片预览
   mediaPreviewUrl.value = dataUrl
-
-  stop()
+  // 生成Blob对象
+  canvas.toBlob(async (blob) => {
+    const file = new File([blob], `photo_${Date.now()}.png`, {
+      type: 'image/png'
+    })
+    // 更新状态
+    selectedFile.value = file
+    mediaPreviewUrl.value = URL.createObjectURL(blob)
+    isImage.value = true
+    isVideo.value = false
+    videoActive.value = false
+    stop()
+  }, 'image/png')
 
 }
 
@@ -248,15 +262,16 @@ const stopCamera = async () => {
     mediaPreviewUrl.value = ''
   }
 
-  // 上传示例（根据需求修改接口）
   if (selectedFile.value) {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
+    formData.append('roadId', roadId.value)
 
     try {
-      const res = await fetch('http://localhost:8000/api/upload/', {
-        method: 'POST',
-        body: formData,
+      await axios.post('http://localhost:8000/road/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
       })
       const result = await res.json()
       console.log('上传成功:', result)
@@ -277,7 +292,6 @@ const stopCamera = async () => {
 
   if (fileInput.value) fileInput.value.value = ''
 
-  // alert('已结束并上传（如有）')
 }
 
 const stop = () => {
@@ -323,15 +337,14 @@ const handleUpload = async e => {
     }
   }
 }
-
 const detectIssues = () => {
-  if (!roadId.value || (!videoActive.value && !selectedFile.value)) {
-    alert('请填写道路编号并上传视频/图片或开启摄像头')
+  if (!roadId.value || !selectedFile.value) {
+    alert('请填写道路编号并上传视频/图片')
     return
   }
   detectionInProgress.value = true
-    results.value = issues.sort(() => 0.5 - Math.random()).slice(0, 2 + Math.floor(Math.random() * 2))
-    detectionInProgress.value = false
+  results.value = issues.sort(() => 0.5 - Math.random()).slice(0, 2 + Math.floor(Math.random() * 2))
+  detectionInProgress.value = false
 }
 
 onMounted(() => {
@@ -441,7 +454,6 @@ button:disabled {
   border-radius: 5px;
 }
 
-/* 拍照结果和录制回放 */
 .photo-result img,
 .video-result video {
   max-width: 100%;
