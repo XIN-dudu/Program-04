@@ -21,6 +21,7 @@ import io
 from PIL import Image, ImageDraw, ImageFont
 from django.http import JsonResponse
 import string
+import pandas as pd
 
 # 简单内存验证码存储（生产建议用redis等）
 email_code_cache = {}
@@ -640,4 +641,38 @@ def update_permission(request):
         return JsonResponse({'msg': '用户不存在'}, status=404)
     except Exception as e:
         return JsonResponse({'msg': f'修改失败: {str(e)}'}, status=500)
+
+@api_view(['GET'])
+def points_api(request):
+    """
+    GET /api/points/?start=2013/9/12 0:00&end=2013/9/12 1:00&car=15053112970&limit=1000
+    只读取前2万行，按参数筛选，返回前limit条。
+    """
+    start = request.GET.get('start')
+    end = request.GET.get('end')
+    car = request.GET.get('car')
+    limit = int(request.GET.get('limit', 1000))
+    file_path = r'C:/Users/27448/Desktop/jn0912_baidu_coords.csv'
+    # 只读取前2万行
+    df = pd.read_csv(file_path, nrows=20000)
+    df.columns = [c.strip() for c in df.columns]
+    if start:
+        df = df[df['UTC'] >= start]
+    if end:
+        df = df[df['UTC'] <= end]
+    if car:
+        df = df[df['COMMADDR'].astype(str) == str(car)]
+    result = df[['LAT', 'LON', 'UTC', 'COMMADDR', 'TFLAG', 'status']].head(limit)
+    data = [
+        {
+            'lat': row['LAT'],
+            'lon': row['LON'],
+            'time': row['UTC'],
+            'car': row['COMMADDR'],
+            'tflag': row['TFLAG'],
+            'status': row['status']
+        }
+        for _, row in result.iterrows()
+    ]
+    return Response(data)
     
