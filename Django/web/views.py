@@ -198,7 +198,7 @@ def login(request):
         user = UserProfile.objects.get(username=username)
         if user.password == password:
             print('登录成功:', username)
-            return Response({'msg': '登录成功', 'name': user.username}, status=status.HTTP_200_OK)
+            return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
         else:
             print('密码错误:', username)
             return Response({'msg': '密码错误'}, status=status.HTTP_400_BAD_REQUEST)
@@ -251,7 +251,7 @@ def email_login(request):
     try:
         user = UserProfile.objects.get(email=email)
         # 登录成功后可做session/token等处理
-        return Response({'msg': '登录成功', 'name': user.username}, status=status.HTTP_200_OK)
+        return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -437,16 +437,35 @@ def click_captcha(request):
     width, height = 320, 100
     image = Image.new('RGB', (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(image)
-    #
     font_path = os.path.join(os.path.dirname(__file__), 'STXINWEI.TTF')
     font = ImageFont.truetype(font_path, 36)
     positions = []
+    # --- 增加干扰线 ---
+    for _ in range(8):
+        x1 = random.randint(0, width)
+        y1 = random.randint(0, height)
+        x2 = random.randint(0, width)
+        y2 = random.randint(0, height)
+        color = tuple(random.randint(100, 200) for _ in range(3))
+        draw.line([(x1, y1), (x2, y2)], fill=color, width=2)
+    # --- 增加噪点 ---
+    for _ in range(300):
+        x = random.randint(0, width-1)
+        y = random.randint(0, height-1)
+        color = tuple(random.randint(0, 255) for _ in range(3))
+        image.putpixel((x, y), color)
+    # --- 绘制扭曲/错位的文字 ---
     for i, word in enumerate(hanzi):
         x = 30 + i * 45 + random.randint(-5, 5)
         y = 30 + random.randint(-10, 10)
-        draw.text((x, y), word, font=font, fill=(0, 0, 0))
+        angle = random.randint(-30, 30)
+        # 生成单字图片
+        char_img = Image.new('RGBA', (40, 50), (255, 255, 255, 0))
+        char_draw = ImageDraw.Draw(char_img)
+        char_draw.text((2, 2), word, font=font, fill=(0, 0, 0))
+        char_img = char_img.rotate(angle, resample=Image.BICUBIC, expand=1)
+        image.paste(char_img, (x, y), char_img)
         positions.append({'word': word, 'x': x, 'y': y, 'w': 36, 'h': 36})
-
     # 编码图片
     buf = io.BytesIO()
     image.save(buf, format='PNG')
@@ -546,6 +565,13 @@ def check_email_available(request):
 @api_view(['GET'])
 @csrf_exempt
 def user_list(request):
+    username = request.GET.get('username') or request.session.get('username')
+    try:
+        user = UserProfile.objects.get(username=username)
+        if user.permission != 2:
+            return JsonResponse({'msg': '无权限'}, status=403)
+    except UserProfile.DoesNotExist:
+        return JsonResponse({'msg': '用户不存在'}, status=404)
     users = UserProfile.objects.all()
     data = [
         {
@@ -561,16 +587,23 @@ def user_list(request):
 @api_view(['POST'])
 @csrf_exempt
 def delete_user(request):
+    username = request.data.get('username') or request.session.get('username')
+    try:
+        user = UserProfile.objects.get(username=username)
+        if user.permission != 2:
+            return JsonResponse({'msg': '无权限'}, status=403)
+    except UserProfile.DoesNotExist:
+        return JsonResponse({'msg': '用户不存在'}, status=404)
     user_id = request.data.get('user_id')
     try:
-        user = UserProfile.objects.get(id=user_id)
+        del_user = UserProfile.objects.get(id=user_id)
         # 先删除百度云人脸库信息
         token = get_baidu_token()
         if token:
             url = f"https://aip.baidubce.com/rest/2.0/face/v3/faceset/user/delete?access_token={token}"
             data = {
                 "group_id": "user_faces",
-                "user_id": str(user.id)
+                "user_id": str(del_user.id)
             }
             headers = {'Content-Type': 'application/json'}
             try:
@@ -579,7 +612,7 @@ def delete_user(request):
             except Exception as e:
                 print(f"调用百度云删除用户失败: {e}")
         # 本地删除用户及人脸记录
-        user.delete()  # 级联删除UserFaceImage
+        del_user.delete()  # 级联删除UserFaceImage
         return JsonResponse({'msg': '用户及人脸记录已删除（含百度云）'})
     except UserProfile.DoesNotExist:
         return JsonResponse({'msg': '用户不存在'}, status=404)
@@ -589,12 +622,19 @@ def delete_user(request):
 @api_view(['POST'])
 @csrf_exempt
 def update_permission(request):
+    username = request.data.get('username') or request.session.get('username')
+    try:
+        user = UserProfile.objects.get(username=username)
+        if user.permission != 2:
+            return JsonResponse({'msg': '无权限'}, status=403)
+    except UserProfile.DoesNotExist:
+        return JsonResponse({'msg': '用户不存在'}, status=404)
     user_id = request.data.get('user_id')
     permission = request.data.get('permission')
     try:
-        user = UserProfile.objects.get(id=user_id)
-        user.permission = int(permission)
-        user.save()
+        target_user = UserProfile.objects.get(id=user_id)
+        target_user.permission = int(permission)
+        target_user.save()
         return JsonResponse({'msg': '权限修改成功'})
     except UserProfile.DoesNotExist:
         return JsonResponse({'msg': '用户不存在'}, status=404)

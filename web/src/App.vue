@@ -23,7 +23,7 @@
           <router-link to="/liveness" class="logo-text">活体检测</router-link>
         </div>
         <div class="user-section">
-          <router-link to="/user-manage" class="logo-text" style="margin-right:18px;">用户管理</router-link>
+          <router-link v-if="isAdmin" to="/user-manage" class="logo-text" style="margin-right:18px;">用户管理</router-link>
           <span class="username clickable" @click="showEdit = true">{{ username }}</span>
           <button @click="logout" class="logout-btn">退出</button>
         </div>
@@ -68,7 +68,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
  
@@ -86,9 +86,41 @@ const showNav = computed(() => {
   return isLoggedIn.value && !/^\/(login|register)?$/.test(path);
 });
 
-const username = computed(() => {
-  return localStorage.getItem('name') || '用户';
+const userNameRef = ref(localStorage.getItem('name') || '用户');
+function updateUserName(name) {
+  localStorage.setItem('name', name);
+  userNameRef.value = name;
+}
+onMounted(() => {
+  window.addEventListener('updateUserName', (e) => {
+    updateUserName(e.detail);
+  });
+  window.addEventListener('storage', () => {
+    userNameRef.value = localStorage.getItem('name') || '用户';
+  });
 });
+onUnmounted(() => {
+  window.removeEventListener('updateUserName', updateUserName);
+});
+const username = computed(() => userNameRef.value);
+
+const userPermissionRef = ref(localStorage.getItem('permission') || '0');
+function updateUserPermission(permission) {
+  localStorage.setItem('permission', permission);
+  userPermissionRef.value = permission;
+}
+onMounted(() => {
+  window.addEventListener('updateUserPermission', (e) => {
+    updateUserPermission(e.detail);
+  });
+  window.addEventListener('storage', () => {
+    userPermissionRef.value = localStorage.getItem('permission') || '0';
+  });
+});
+onUnmounted(() => {
+  window.removeEventListener('updateUserPermission', updateUserPermission);
+});
+const isAdmin = computed(() => userPermissionRef.value == '2');
 
 const showEdit = ref(false);
 const editEmail = ref(localStorage.getItem('email') || '');

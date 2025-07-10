@@ -39,12 +39,16 @@ import axios from 'axios'
 const users = ref([])
 
 const fetchUsers = async () => {
-  const res = await axios.get('http://localhost:8000/api/user_list/', { withCredentials: true })
+  const res = await axios.get('http://localhost:8000/api/user_list/', {
+    params: { username: localStorage.getItem('name') },
+    withCredentials: true
+  })
   users.value = res.data.users
 }
 
 const updatePermission = async (user) => {
   await axios.post('http://localhost:8000/api/update_permission/', {
+    username: localStorage.getItem('name'),
     user_id: user.id,
     permission: user.permission
   }, { withCredentials: true })
@@ -53,8 +57,10 @@ const updatePermission = async (user) => {
 
 const deleteUser = async (user) => {
   if (!confirm(`确定要删除用户 ${user.username} 吗？此操作不可恢复！`)) return
-  // 1. 删除用户及人脸记录
-  await axios.post('http://localhost:8000/api/delete_user/', { user_id: user.id }, { withCredentials: true })
+  await axios.post('http://localhost:8000/api/delete_user/', {
+    username: localStorage.getItem('name'),
+    user_id: user.id
+  }, { withCredentials: true })
   fetchUsers()
 }
 

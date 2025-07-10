@@ -34,6 +34,8 @@ router.beforeEach((to, from, next) => {
   } else if (to.path === '/' && isLoggedIn) {
     // 已登录但访问登录页，重定向到首页
     next('/home')
+  } else if (to.name === 'UserManage' && localStorage.getItem('permission') != '2') {
+    next('/')
   } else {
     next()
   }

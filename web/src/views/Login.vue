@@ -143,7 +143,13 @@ const handleLogin = async () => {
     })
     if (response.status === 200) {
       alert(response.data.msg || '登录成功')
-      if (response.data.name) localStorage.setItem('name', response.data.name)
+      // 登录成功后
+      if (response.data.name) {
+        window.dispatchEvent(new CustomEvent('updateUserName', { detail: response.data.name }));
+      }
+      if (response.data.permission !== undefined) {
+        window.dispatchEvent(new CustomEvent('updateUserPermission', { detail: response.data.permission }));
+      }
       router.push('/home')
     }
   } catch (error) {
@@ -219,7 +225,13 @@ const handleEmailLogin = async () => {
     if (res.status === 200) {
       alert(res.data.msg || '登录成功')
       localStorage.setItem('email', emailForm.value.email)
-      if (res.data.name) localStorage.setItem('name', res.data.name)
+      // 登录成功后
+      if (res.data.name) {
+        window.dispatchEvent(new CustomEvent('updateUserName', { detail: res.data.name }));
+      }
+      if (res.data.permission !== undefined) {
+        window.dispatchEvent(new CustomEvent('updateUserPermission', { detail: res.data.permission }));
+      }
       router.push('/home')
     }
   } catch (err) {
