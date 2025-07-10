@@ -12,4 +12,6 @@ urlpatterns = [
     path('liveness_check', views.liveness_check),
     path('click_captcha/', views.click_captcha),
     path('click_captcha/verify/', views.click_captcha_verify),
+    path('update_profile/', views.update_profile),
+    path('check_email_available/', views.check_email_available),
 ]

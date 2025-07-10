@@ -3,19 +3,35 @@
 import { createRouter, createWebHistory, useRouter } from 'vue-router'
 
 const routes = [
-  { path: '/', redirect: '/home' },
-  { path: '/home', component: () => import('../views/Info.vue') },
-  { path: '/monitor', component: () => import('../views/MonitorRoad.vue') },
-  { path: '/urbanTraffic', component: () => import('../views/UrbanTraffic.vue') },
-  { path: '/history', component: () => import('../views/History.vue') },
+  { path: '/', component: () => import('../views/Login.vue') },
+  { path: '/home', component: () => import('../views/Info.vue'), meta: { requiresAuth: true } },
+  { path: '/monitor', component: () => import('../views/MonitorRoad.vue'), meta: { requiresAuth: true } },
+  { path: '/urbanTraffic', component: () => import('../views/UrbanTraffic.vue'), meta: { requiresAuth: true } },
+  { path: '/history', component: () => import('../views/History.vue'), meta: { requiresAuth: true } },
   { path: '/login', component: () => import('../views/Login.vue') },
   { path: '/register', component: () => import('../views/Register.vue') },
-  { path: '/face-recognition', component: () => import('../views/FaceRecognition.vue') },
-  { path: '/liveness', component: () => import('../views/LivenessDetection.vue') },
+  { path: '/face-recognition', component: () => import('../views/FaceRecognition.vue'), meta: { requiresAuth: true } },
+  { path: '/liveness', component: () => import('../views/LivenessDetection.vue'), meta: { requiresAuth: true } },
 ]
+
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// 路由守卫
+router.beforeEach((to, from, next) => {
+  const isLoggedIn = localStorage.getItem('name') || localStorage.getItem('email')
+  
+  if (to.meta.requiresAuth && !isLoggedIn) {
+    // 需要登录但未登录，重定向到登录页
+    next('/')
+  } else if (to.path === '/' && isLoggedIn) {
+    // 已登录但访问登录页，重定向到首页
+    next('/home')
+  } else {
+    next()
+  }
 })
 
 export default router

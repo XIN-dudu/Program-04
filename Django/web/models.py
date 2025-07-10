@@ -64,6 +64,12 @@ class UserProfile(models.Model):
     face_id = models.CharField(max_length=128, blank=True, null=True)
     # 主要头像图片
     face_image = EncryptedImageField(upload_to=user_face_path, blank=True, null=True)
+    # 用户权限：0-普通用户，1-维修工，2-管理员
+    permission = models.IntegerField(choices=[
+        (0, '普通用户'),
+        (1, '维修工'),
+        (2, '管理员')
+    ], default=0)
     
     def __str__(self):
         return self.username

@@ -118,10 +118,19 @@ def register(request):
     password = request.data.get('password')
     email = request.data.get('email')
     phone = request.data.get('phone')
+    permission = request.data.get('permission', 0)  # 默认普通用户
     
     # 检查必填字段
     if not all([username, password, email, phone]):
         return Response({'msg': '用户名、密码、邮箱和手机号不能为空'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 检查权限值是否合法（只允许0-普通用户，1-维修工）
+    try:
+        permission = int(permission)
+        if permission not in [0, 1]:
+            return Response({'msg': '无效的用户角色'}, status=status.HTTP_400_BAD_REQUEST)
+    except (ValueError, TypeError):
+        return Response({'msg': '无效的用户角色'}, status=status.HTTP_400_BAD_REQUEST)
     
     # 检查唯一性
     if UserProfile.objects.filter(username=username).exists():
@@ -142,6 +151,7 @@ def register(request):
         password=password,
         email=email,
         phone=phone,
+        permission=permission,  # 设置用户权限
         face_image=face_images[0]  # 使用第一张图片作为主头像
     )
     user.save()
@@ -187,7 +197,7 @@ def login(request):
         user = UserProfile.objects.get(username=username)
         if user.password == password:
             print('登录成功:', username)
-            return Response({'msg': '登录成功'}, status=status.HTTP_200_OK)
+            return Response({'msg': '登录成功', 'name': user.username}, status=status.HTTP_200_OK)
         else:
             print('密码错误:', username)
             return Response({'msg': '密码错误'}, status=status.HTTP_400_BAD_REQUEST)
@@ -201,16 +211,15 @@ def send_email_code(request):
     email = request.data.get('email')
     if not email:
         return Response({'msg': '邮箱不能为空'}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        user = UserProfile.objects.get(email=email)
-    except UserProfile.DoesNotExist:
-        return Response({'msg': '该邮箱未注册'}, status=status.HTTP_400_BAD_REQUEST)
+    # 允许任意邮箱发送验证码，不校验是否注册
     # 生成6位验证码
     code = str(random.randint(100000, 999999))
     # 发送邮件
     try:
         to_addr = email
         smtp_server = 'smtp.qq.com'
+        from_addr = '2640584193@qq.com'  # TODO: 改成你的发件邮箱
+        password = 'czryjftofgjrebhi'  # TODO: 改成你的邮箱授权码
         msg = MIMEText(f'您的登录验证码是：{code}，5分钟内有效。', 'plain', 'utf-8')
         from email.utils import formataddr
         msg['From'] = formataddr(("验证码登录", from_addr))
@@ -241,7 +250,7 @@ def email_login(request):
     try:
         user = UserProfile.objects.get(email=email)
         # 登录成功后可做session/token等处理
-        return Response({'msg': '登录成功'}, status=status.HTTP_200_OK)
+        return Response({'msg': '登录成功', 'name': user.username}, status=status.HTTP_200_OK)
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
     
@@ -485,4 +494,51 @@ def click_captcha_verify(request):
         return Response({'msg': 'success'})
     else:
         return Response({'msg': 'fail'}, status=400)
+
+@api_view(['POST'])
+def update_profile(request):
+    username = request.data.get('username')
+    new_email = request.data.get('email')
+    new_password = request.data.get('password')
+    email_code = request.data.get('email_code')
+    if not username:
+        return Response({'msg': '用户名不能为空'}, status=400)
+    try:
+        user = UserProfile.objects.get(username=username)
+        updated = False
+        # 邮箱更改需要验证码校验
+        if new_email and new_email != user.email:
+            if not email_code:
+                return Response({'msg': '请输入邮箱验证码'}, status=400)
+            real_code = email_code_cache.get(new_email)
+            if not real_code:
+                return Response({'msg': '请先获取验证码'}, status=400)
+            if email_code != real_code:
+                return Response({'msg': '验证码错误'}, status=400)
+            # 检查邮箱唯一性
+            if UserProfile.objects.filter(email=new_email).exclude(username=username).exists():
+                return Response({'msg': '该邮箱已被其他用户占用'}, status=400)
+            user.email = new_email
+            updated = True
+        if new_password:
+            user.password = new_password
+            updated = True
+        if updated:
+            user.save()
+            return Response({'msg': '信息修改成功'})
+        else:
+            return Response({'msg': '没有需要修改的信息'}, status=200)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    
+@api_view(['POST'])
+def check_email_available(request):
+    email = request.data.get('email')
+    username = request.data.get('username')
+    if not email:
+        return Response({'available': False, 'msg': '邮箱不能为空'}, status=400)
+    # 只要不是当前用户自己的邮箱且已被其他用户绑定就不可用
+    if UserProfile.objects.filter(email=email).exclude(username=username).exists():
+        return Response({'available': False, 'msg': '该邮箱已被其他用户绑定'}, status=200)
+    return Response({'available': True, 'msg': '邮箱可用'}, status=200)
     
