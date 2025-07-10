@@ -142,11 +142,6 @@ export default {
       this.errorMsg = '';
       this.successMsg = '';
       this.router = useRouter();
-      // 新增：注册时弹出loading
-      const loading = document.createElement('div');
-      loading.innerText = '正在注册，请稍候...';
-      loading.style = 'position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);background:#fff;padding:24px 36px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.15);z-index:9999;font-size:18px;';
-      document.body.appendChild(loading);
       try {
         const formData = new FormData();
         formData.append('username', this.form.username);
@@ -160,13 +155,9 @@ export default {
         const res = await axios.post('http://localhost:8000/register', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-        document.body.removeChild(loading);
         this.successMsg = res.data.msg || '注册成功';
-        // 注册成功弹窗，点击确认后跳转
-        alert(this.successMsg);
-        this.$router.push('/login');
+        this.$router.push('/');
       } catch (err) {
-        document.body.removeChild(loading);
         console.log('注册失败详细信息:', err.response);
         this.errorMsg = (err.response && err.response.data && (err.response.data.msg || JSON.stringify(err.response.data)))
           || err.message

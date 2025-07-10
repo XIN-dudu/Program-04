@@ -166,7 +166,7 @@ def register(request):
         # 上传到百度人脸库（如果配置了百度API）
         if all([BAIDU_API_KEY, BAIDU_SECRET_KEY, BAIDU_APP_ID]) and BAIDU_API_KEY != "你的百度云API Key":
             try:
-                time.sleep(0.2)  # 每次上传前等待0.2秒，提升注册速度
+                time.sleep(1)  # 每次上传前等待1秒，防止QPS超限
                 face_token = add_face_to_baidu(
                     image_path, 
                     user.id, 
@@ -618,7 +618,6 @@ def delete_user(request):
     except UserProfile.DoesNotExist:
         return JsonResponse({'msg': '用户不存在'}, status=404)
     except Exception as e:
-        print('删除用户异常:', e)
         return JsonResponse({'msg': f'删除失败: {str(e)}'}, status=500)
     
 @api_view(['POST'])
