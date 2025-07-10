@@ -17,4 +17,5 @@ urlpatterns = [
     path('api/user_list/', views.user_list),
     path('api/update_permission/', views.update_permission),
     path('api/delete_user/', views.delete_user),
+    path('points/', views.points_api),  # 新增车辆轨迹点查询接口
 ]
