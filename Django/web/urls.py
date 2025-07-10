@@ -14,9 +14,9 @@ urlpatterns = [
     path('click_captcha/verify/', views.click_captcha_verify),
     path('update_profile/', views.update_profile),
     path('check_email_available/', views.check_email_available),
-    path('api/user_list/', views.user_list),
-    path('api/update_permission/', views.update_permission),
-    path('api/delete_user/', views.delete_user),
+    path('user_list/', views.user_list),
+    path('update_permission/', views.update_permission),
+    path('delete_user/', views.delete_user),
     path('points/', views.points_api),  # 新增车辆轨迹点查询接口
-    path('api/face_verify_one_to_one/', views.face_verify_one_to_one),
+    path('face_verify_one_to_one/', views.face_verify_one_to_one),
 ]

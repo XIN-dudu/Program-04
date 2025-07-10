@@ -50,7 +50,7 @@
               <button type="button" @click="closeCamera">关闭</button>
             </div>
           </div>
-          <button type="submit" class="submit-btn">注册</button>
+          <button type="submit" class="submit-btn" :disabled="loading">{{ loading ? '注册中...' : '注册' }}</button>
         </form>
         <div v-if="errorMsg" class="error">{{ errorMsg }}</div>
         <div v-if="successMsg" class="success">{{ successMsg }}</div>
@@ -81,7 +81,8 @@ export default {
       errorMsg: '',
       successMsg: '',
       showCamera: false,
-      videoStream: null
+      videoStream: null,
+      loading: false // 新增loading状态
     };
   },
   mounted() {
@@ -141,6 +142,7 @@ export default {
       }
       this.errorMsg = '';
       this.successMsg = '';
+      this.loading = true; // 开始loading
       this.router = useRouter();
       try {
         const formData = new FormData();
@@ -152,12 +154,16 @@ export default {
         this.faceImages.forEach((file, idx) => {
           formData.append('face_images', file);
         });
-        const res = await axios.post('http://localhost:8000/register', formData, {
+        const res = await axios.post('http://localhost:8000/api/register', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         this.successMsg = res.data.msg || '注册成功';
-        this.$router.push('/');
+        this.loading = false;
+        // 注册成功弹窗，确认后跳转到登录页
+        alert(this.successMsg);
+        this.$router.push('/login');
       } catch (err) {
+        this.loading = false;
         console.log('注册失败详细信息:', err.response);
         this.errorMsg = (err.response && err.response.data && (err.response.data.msg || JSON.stringify(err.response.data)))
           || err.message

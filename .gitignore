@@ -1,4 +1,38 @@
-.DS_Store
+# Python
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.egg
+*.log
+*.sqlite3
+.DS_Store
+.env
+.venv/
+venv/
 
-*.pyc
+# Django
+media/
+staticfiles/
+
+# VSCode
+.vscode/
+
+# Node/Vue
+node_modules/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Others
+.idea/
+*.swp
+*.swo

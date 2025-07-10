@@ -167,10 +167,7 @@ def register(request):
         face_token = None
         if all([BAIDU_API_KEY, BAIDU_SECRET_KEY, BAIDU_APP_ID]) and BAIDU_API_KEY != "你的百度云API Key":
             try:
-<<<<<<< Updated upstream
-=======
                 time.sleep(0.2)
->>>>>>> Stashed changes
                 face_token = add_face_to_baidu(
                     image_path, 
                     user.id, 

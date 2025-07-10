@@ -95,7 +95,7 @@ const captchaId = ref('')
 const captchaClicks = ref([])
 
 const fetchCaptcha = async () => {
-  const res = await axios.get('http://localhost:8000/click_captcha/', { withCredentials: true })
+  const res = await axios.get('http://localhost:8000/api/click_captcha/', { withCredentials: true })
   captchaImg.value = res.data.image
   captchaTargets.value = res.data.targets
   captchaId.value = res.data.captcha_id
@@ -124,7 +124,7 @@ const handleLogin = async () => {
   try {
     // 校验验证码
     const verifyRes = await axios.post(
-      'http://localhost:8000/click_captcha/verify/',
+      'http://localhost:8000/api/click_captcha/verify/',
       {
         captcha_id: captchaId.value,
         clicks: captchaClicks.value
@@ -137,7 +137,7 @@ const handleLogin = async () => {
       return
     }
     // 验证码通过后再登录
-    const response = await axios.post('http://localhost:8000/login', {
+    const response = await axios.post('http://localhost:8000/api/login', {
       username: loginForm.value.name,
       password: loginForm.value.password
     })
@@ -169,7 +169,7 @@ const handleSendEmailCode = async () => {
   try {
     // 校验点选验证码
     const verifyRes = await axios.post(
-      'http://localhost:8000/click_captcha/verify/',
+      'http://localhost:8000/api/click_captcha/verify/',
       {
         captcha_id: captchaId.value,
         clicks: captchaClicks.value
@@ -182,7 +182,7 @@ const handleSendEmailCode = async () => {
       return
     }
     // 验证码通过后再发送邮箱验证码
-    const res = await axios.post('http://localhost:8000/send_email_code', {
+    const res = await axios.post('http://localhost:8000/api/send_email_code', {
       email: emailForm.value.email
     }, { withCredentials: true })
     alert(res.data.msg || '验证码已发送')
@@ -205,7 +205,7 @@ const handleEmailLogin = async () => {
   try {
     // 校验点选验证码
     const verifyRes = await axios.post(
-      'http://localhost:8000/click_captcha/verify/',
+      'http://localhost:8000/api/click_captcha/verify/',
       {
         captcha_id: captchaId.value,
         clicks: captchaClicks.value
@@ -218,7 +218,7 @@ const handleEmailLogin = async () => {
       return
     }
     // 验证码通过后再邮箱登录
-    const res = await axios.post('http://localhost:8000/email_login', {
+    const res = await axios.post('http://localhost:8000/api/email_login', {
       email: emailForm.value.email,
       code: emailForm.value.code
     }, { withCredentials: true })
