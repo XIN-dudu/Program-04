@@ -1,0 +1,20 @@
+[Unit]
+Description=Program-04 Django Application
+After=network.target
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+RuntimeDirectory=gunicorn
+WorkingDirectory=/var/www/program-04/Django
+Environment="PATH=/var/www/program-04/venv/bin"
+Environment="DJANGO_SETTINGS_MODULE=Django.settings_production"
+ExecStart=/var/www/program-04/venv/bin/gunicorn --config gunicorn.conf.py Django.wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target 
