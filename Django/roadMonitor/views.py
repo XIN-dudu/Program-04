@@ -1,3 +1,4 @@
+import time
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -10,7 +11,16 @@ import os
 from django.conf import settings
 import pandas as pd
 from datetime import datetime, timedelta
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
 
+issues = [
+    {'title': '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区'},
+    {'title': '横向裂纹', 'description': '监测到横向裂纹约20米', 'severity': '严重', 'position': '翻斗花园123街区'},
+    {'title': '龟裂', 'description': '道路出现微笑裂纹，覆盖区域仅1平方米，建议及时修复', 'severity': '轻微', 'position': '翻斗花园123街区'},
+    {'title': '坑洼', 'description': '坑洞深114514米，半径长1919810米，没救了', 'severity': '严重', 'position': '翻斗花园123街区'},
+    {'title': '无损害', 'description': '道路完整', 'severity': '安全', 'position': '翻斗花园123街区'}
+]
 # Create your views here.
 
 # #获取路面图像信息
@@ -38,11 +48,18 @@ def upload_image(request):
         filename = default_storage.save(save_path, file)
         # 生成完整URL
         file_url = request.build_absolute_uri(default_storage.url(filename))
-        return Response({'message': '上传成功', 'url': file_url})
+
+        return Response({'message': '上传成功'}, status=200)
     
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
-    
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def get_result(request):
+    #file = request.FILES.get('file')
+    #roadId = request.POST.get('roadId')
+    return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区'}, status=200)
 
 @api_view(['GET'])
 def history_get(request):

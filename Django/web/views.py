@@ -195,24 +195,40 @@ def register(request):
 def login(request):
     username = request.data.get('username') or request.data.get('name')
     password = request.data.get('password')
-    print('收到登录请求:', username, password)
+    captcha_id = request.data.get('captcha_id')
+    captcha_clicks = request.data.get('captcha_clicks')
+    # 验证码校验（如果前端有传）
+    if captcha_id and captcha_clicks:
+        session_key = 'click_captcha_%s' % captcha_id
+        captcha_data = request.session.get(session_key)
+        if not captcha_data:
+            return Response({'msg': '验证码已过期', 'reason': 'captcha_expired'}, status=status.HTTP_400_BAD_REQUEST)
+        targets = captcha_data['targets']
+        positions = captcha_data['positions']
+        checked = 0
+        for i, target in enumerate(targets):
+            for pos in positions:
+                if pos['word'] == target:
+                    x0, y0, w, h = pos['x'], pos['y'], pos['w'], pos['h']
+                    x, y = captcha_clicks[i]['x'], captcha_clicks[i]['y']
+                    if x0 <= x <= x0 + w and y0 <= y <= y0 + h:
+                        checked += 1
+                    break
+        if checked != 4:
+            return Response({'msg': '验证码错误', 'reason': 'captcha_error'}, status=status.HTTP_400_BAD_REQUEST)
     if not username or not password:
-        print('用户名或密码为空')
-        return Response({'msg': '用户名和密码不能为空'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'msg': '用户名和密码不能为空', 'reason': 'empty'}, status=status.HTTP_400_BAD_REQUEST)
     try:
         user = UserProfile.objects.get(username=username)
         if user.password == password:
-            print('登录成功:', username)
             create_log(request,user,'info', '用户登入成功', f'用户名: {username}')
             return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
         else:
-            print('密码错误:', username)
             create_log(request,user,'info', '用户登入失败', f'用户名: {username}，密码错误')
-            return Response({'msg': '密码错误'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'msg': '密码错误', 'reason': 'password_error'}, status=status.HTTP_400_BAD_REQUEST)
     except UserProfile.DoesNotExist:
-        print('用户不存在:', username)
         create_log(request,None,'info', '用户登入失败', f'用户名: {username}，用户不存在')
-        return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'msg': '用户不存在', 'reason': 'user_not_found'}, status=status.HTTP_400_BAD_REQUEST)
 
 # 发送邮箱验证码接口
 @api_view(['POST'])
@@ -220,7 +236,9 @@ def send_email_code(request):
     email = request.data.get('email')
     if not email:
         return Response({'msg': '邮箱不能为空'}, status=status.HTTP_400_BAD_REQUEST)
-    # 允许任意邮箱发送验证码，不校验是否注册
+    # 新增：先判断邮箱是否已注册
+    if not UserProfile.objects.filter(email=email).exists():
+        return Response({'msg': '该邮箱未注册'}, status=status.HTTP_400_BAD_REQUEST)
     # 生成6位验证码
     code = str(random.randint(100000, 999999))
     # 发送邮件
@@ -501,14 +519,13 @@ def click_captcha_verify(request):
     captcha_id = request.data.get('captcha_id')
     clicks = request.data.get('clicks')  # [{x: , y: }, ...]
     if not captcha_id or not clicks or len(clicks) != 4:
-        return Response({'msg': '参数错误'}, status=400)
+        return Response({'msg': '参数错误', 'reason': 'param_error'}, status=400)
     session_key = 'click_captcha_%s' % captcha_id
     captcha_data = request.session.get(session_key)
     if not captcha_data:
-        return Response({'msg': '验证码已过期'}, status=400)
+        return Response({'msg': '验证码已过期', 'reason': 'captcha_expired'}, status=400)
     targets = captcha_data['targets']
     positions = captcha_data['positions']
-    # 依次校验点击是否落在目标汉字区域
     checked = 0
     for i, target in enumerate(targets):
         for pos in positions:
@@ -521,7 +538,7 @@ def click_captcha_verify(request):
     if checked == 4:
         return Response({'msg': 'success'})
     else:
-        return Response({'msg': 'fail'}, status=400)
+        return Response({'msg': '验证码错误', 'reason': 'captcha_error'}, status=400)
 
 @api_view(['POST'])
 def update_profile(request):

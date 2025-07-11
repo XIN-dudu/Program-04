@@ -42,12 +42,13 @@
     <div class="right-panel">
       <div class="result-header">检测结果：</div>
       <div class="result-list">
-        <p v-if="results.length === 0">具体展示结果</p>
-        <div v-for="(item, index) in results" :key="index" class="result-card">
-          <h3>{{ item.title }}</h3>
-          <p>{{ item.description }}</p>
-          <p><strong>严重程度:</strong> {{ item.severity }}</p>
-        </div>
+        <p v-if="result == null">具体展示结果</p>
+        <p v-else class="result-card">
+          <h3>{{ result.title }}</h3>
+          <p>{{ result.description }}</p>
+          <p><strong>严重程度:</strong> {{ result.severity }}</p>
+          <p>{{ result.position }}</p>
+        </p>
       </div>
     </div>
   </div>
@@ -61,7 +62,7 @@ const roadId = ref('')
 const videoActive = ref(false)
 const selectedFile = ref(null)
 const detectionInProgress = ref(false)
-const results = ref([])
+const result = ref()
 const videoElement = ref(null)
 const fileInput = ref(null)
 
@@ -77,11 +78,6 @@ const mediaStream = ref(null)
 const mediaRecorder = ref(null)
 const recordedChunks = ref([])
 
-const issues = [
-  { title: '裂缝检测', description: '检测到裂缝约2.3米', severity: '中等' },
-  { title: '坑洞检测', description: '检测到坑洞直径15cm', severity: '严重' },
-  { title: '边缘破损', description: '道路边缘破损长度约1.5米', severity: '轻微' },
-]
 const openCamera = () => {
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
@@ -211,7 +207,7 @@ const takePhoto = () => {
   recordedVideoUrl.value = ''
   mediaPreviewUrl.value = ''
   selectedFile.value = null
-  results.value = []
+  result.value = null
   isImage.value = true
   isVideo.value = false
   videoActive.value = false
@@ -268,13 +264,14 @@ const stopCamera = async () => {
     formData.append('roadId', roadId.value)
 
     try {
-      await axios.post('/road/upload', formData, {
+      await axios.post('http://localhost:8000/road/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       })
       const result = await res.json()
       console.log('上传成功:', result)
+      alert(result)
     } catch (err) {
       console.error('上传失败:', err)
     }
@@ -283,7 +280,7 @@ const stopCamera = async () => {
   videoActive.value = false
   selectedFile.value = null
   detectionInProgress.value = false
-  results.value = []
+  result.value = null
   isImage.value = false
   isVideo.value = false
   photoDataUrl.value = ''
@@ -311,6 +308,7 @@ const triggerUpload = () => {
     return
   }
   stopCamera()
+
   fileInput.value.click()
 }
 
@@ -325,7 +323,7 @@ const handleUpload = async e => {
   videoActive.value = isVideo.value
   photoDataUrl.value = ''
   recordedVideoUrl.value = ''
-  results.value = []
+  result.value = null
 
   if (isVideo.value) {
     await nextTick()
@@ -337,13 +335,35 @@ const handleUpload = async e => {
     }
   }
 }
-const detectIssues = () => {
+const detectIssues = async () => {
   if (!roadId.value || !selectedFile.value) {
     alert('请填写道路编号并上传视频/图片')
     return
   }
-  detectionInProgress.value = true
-  results.value = issues.sort(() => 0.5 - Math.random()).slice(0, 2 + Math.floor(Math.random() * 2))
+  if (selectedFile.value) {
+    const formData = new FormData()
+    formData.append('file', selectedFile.value)
+    formData.append('roadId', roadId.value)
+    detectionInProgress.value = true
+    try {
+      const response = await axios.post('http://localhost:8000/road/get_result', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      })
+      result.value = {
+        title: response.data.title,
+        description: response.data.description,
+        severity: response.data.severity,
+        position: response.data.position
+      }
+      //alert("success")
+      console.log('上传成功:', result)
+    } catch (err) {
+      console.error('上传失败:', err)
+      alert("fail")
+    }
+  }
   detectionInProgress.value = false
 }
 
