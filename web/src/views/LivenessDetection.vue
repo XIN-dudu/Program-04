@@ -125,7 +125,7 @@ export default {
       const formData = new FormData();
       formData.append('video', blob, 'liveness.webm');
       try {
-        const response = await axios.post('http://localhost:8000/api/liveness_check', formData, {
+        const response = await axios.post('/api/liveness_check', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         this.livenessResult = response.data;
@@ -160,7 +160,7 @@ export default {
       const formData = new FormData();
       formData.append('image', blob, 'liveness.jpg');
       try {
-        const response = await axios.post('http://localhost:8000/api/liveness_detection', formData, {
+        const response = await axios.post('/api/liveness_detection', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         this.result = response.data;

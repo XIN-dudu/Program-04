@@ -99,7 +99,7 @@ export default {
         const formData = new FormData();
         formData.append('username', localStorage.getItem('name'));
         formData.append('image', imageBlob);
-        const res = await axios.post('http://localhost:8000/api/face_verify_one_to_one/', formData, {
+        const res = await axios.post('/api/face_verify_one_to_one/', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         const data = res.data;

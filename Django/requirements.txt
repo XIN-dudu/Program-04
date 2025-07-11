@@ -1,0 +1,10 @@
+django
+pymysql
+djangorestframework
+django-cors-headers
+pycryptodome
+Pillow
+requests
+pandas
+numpy
+drf-yasg 

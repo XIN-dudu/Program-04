@@ -6,6 +6,12 @@ module.exports = {
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        pathRewrite: { '^/api': '/api' }
+      },
+      '/road': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        pathRewrite: { '^/road': '/road' }
       }
     }
   }

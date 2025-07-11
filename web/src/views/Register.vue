@@ -154,7 +154,7 @@ export default {
         this.faceImages.forEach((file, idx) => {
           formData.append('face_images', file);
         });
-        const res = await axios.post('http://localhost:8000/api/register', formData, {
+        const res = await axios.post('/api/register', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         this.successMsg = res.data.msg || '注册成功';

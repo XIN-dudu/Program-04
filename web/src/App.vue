@@ -136,7 +136,7 @@ const sendEditEmailCode = async () => {
   }
   // 新增：先校验邮箱是否可用
   try {
-    const checkRes = await axios.post('http://localhost:8000/api/check_email_available/', {
+    const checkRes = await axios.post('/api/check_email_available/', {
       email: editEmail.value,
       username: localStorage.getItem('name')
     }, { withCredentials: true });
@@ -150,7 +150,7 @@ const sendEditEmailCode = async () => {
   }
   // 校验通过再发送验证码
   try {
-    await axios.post('http://localhost:8000/api/send_email_code', { email: editEmail.value }, { withCredentials: true });
+    await axios.post('/api/send_email_code', { email: editEmail.value }, { withCredentials: true });
     emailCodeSent.value = true;
     alert('验证码已发送到新邮箱');
     setTimeout(() => { emailCodeSent.value = false; }, 60000); // 1分钟后可重新发送
@@ -171,7 +171,7 @@ const handleEditSave = async () => {
       password: editPassword.value,
       email_code: editEmailCode.value
     };
-    const res = await axios.post('http://localhost:8000/api/update_profile/', payload, { withCredentials: true });
+    const res = await axios.post('/api/update_profile/', payload, { withCredentials: true });
     if (res.data && res.data.msg) alert(res.data.msg);
     if (editEmail.value) localStorage.setItem('email', editEmail.value);
     editPassword.value = '';
