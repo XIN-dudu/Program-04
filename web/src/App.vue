@@ -39,15 +39,23 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
  
 const router = useRouter();
 const route = useRoute();
 
+watch(
+  () => route.path,
+  () => {
+    userNameRef.value = localStorage.getItem('name') || '用户';
+    userPermissionRef.value = localStorage.getItem('permission') || '0';
+  }
+);
+
 const isLoggedIn = computed(() => {
-  return !!(  localStorage.getItem('name') || localStorage.getItem('email'));
+  return !!(userNameRef.value && userNameRef.value !== '用户');
 });
 
 const showNav = computed(() => {
