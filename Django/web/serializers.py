@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import UserProfile, UserFaceImage
+from .models import UserProfile, UserFaceImage , SystemLog
 
 
 class UserFaceImageSerializer(serializers.ModelSerializer):
@@ -17,3 +17,13 @@ class UserSerializer(serializers.ModelSerializer):
             'password': {'write_only': True},
             'face_id': {'read_only': True}
         }
+class LogSerializer(serializers.ModelSerializer):
+    # user_id = UserSerializer( read_only=True)
+    class Meta:
+        model = SystemLog
+        fields = ['id','level','user', 'ip_address', 'action', 'details', 'timestamp']
+        read_only_fields = ['id', 'timestamp']
+
+    def create(self, validated_data):
+        # 可以在这里添加日志创建时的额外逻辑
+        return super().create(validated_data)

@@ -5,9 +5,10 @@ from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import parser_classes
 from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 
 from web.serializers import UserSerializer
-from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY
+from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY, SystemLog
 import random
 import smtplib
 from email.mime.text import MIMEText
@@ -186,6 +187,7 @@ def register(request):
     if not success_faces:
         user.delete()  # 删除用户
         return Response({'msg': '人脸图片未能成功同步到百度云，请重试'}, status=500)
+    create_log(request,user,'info', '注册用户', f'用户名: {username}, 邮箱: {email}, 手机: {phone}, 权限: {permission}')
     return Response({'msg': '注册成功'}, status=status.HTTP_201_CREATED)
 
 # 登录接口
@@ -201,12 +203,15 @@ def login(request):
         user = UserProfile.objects.get(username=username)
         if user.password == password:
             print('登录成功:', username)
+            create_log(request,user,'info', '用户登入成功', f'用户名: {username}')
             return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
         else:
             print('密码错误:', username)
+            create_log(request,user,'info', '用户登入失败', f'用户名: {username}，密码错误')
             return Response({'msg': '密码错误'}, status=status.HTTP_400_BAD_REQUEST)
     except UserProfile.DoesNotExist:
         print('用户不存在:', username)
+        create_log(request,None,'info', '用户登入失败', f'用户名: {username}，用户不存在')
         return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
 
 # 发送邮箱验证码接口
@@ -771,3 +776,31 @@ def face_verify_one_to_one(request):
     except Exception as e:
         return Response({'msg': f'比对过程出错: {str(e)}'}, status=500)
     
+def get_client_ip(request):
+    """获取客户端真实IP"""
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    return x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
+
+def create_log(request,user, level, action, details):
+    """创建新日志条目"""
+    
+    # 自动获取客户端IP
+    ip = get_client_ip(request)
+    
+    log = SystemLog(
+        user=user,
+        level=level,
+        action=action,
+        details=details,
+        ip_address=ip,
+        timestamp=timezone.now()
+    )
+    # if log.is_valid():
+    log.save()
+        # return Response(log.data, status=status.HTTP_201_CREATED)
+    # return Response(log.errors, status=status.HTTP_400_BAD_REQUEST)
+    # serializer = LogSerializer(data={'user_id': user_id, 'level': level, 'action': action, 'details': details, 'ip_address': ip,'tiemestamp': timezone.now()})
+    # if serializer.is_valid():
+    #     serializer.save()
+    #     # return Response(serializer.data, status=status.HTTP_201_CREATED)
+    # # return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

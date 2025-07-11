@@ -83,3 +83,17 @@ class UserFaceImage(models.Model):
     
     def __str__(self):
         return f"{self.user.username}'s face image {self.id}"
+
+class SystemLog(models.Model):
+    user = models.ForeignKey(UserProfile, related_name='logs', on_delete=models.CASCADE,null=True,blank=True)  # 关联用户ID
+    level = models.CharField(max_length=20, choices=[
+        ('info', 'Info'),
+        ('warning', 'Warning'),
+        ('error', 'Error'),
+    ], default='info')  # 日志级别
+    ip_address = models.GenericIPAddressField(null=True, blank=True)  # 操作IP地址
+    action = models.CharField(max_length=100)  # 描述用户操作
+    timestamp = models.DateTimeField(auto_now_add=True)  # 操作时间
+    details = models.TextField(blank=True, null=True)  # 其他操作细节 
+    def __str__(self):
+        return f"{self.user.username} - {self.action} at {self.timestamp}"
