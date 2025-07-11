@@ -22,6 +22,7 @@ from PIL import Image, ImageDraw, ImageFont
 from django.http import JsonResponse
 import string
 import pandas as pd
+import numpy as np  # 在文件顶部加上
 
 # 简单内存验证码存储（生产建议用redis等）
 email_code_cache = {}
@@ -652,24 +653,43 @@ def points_api(request):
     start = request.GET.get('start')
     end = request.GET.get('end')
     car = request.GET.get('car')
-    limit = int(request.GET.get('limit', 1000))
+    limit = int(request.GET.get('limit', 1))
     file_path = r'C:/Users/27448/Desktop/jn0912_baidu_coords.csv'
     # 只读取前2万行
     df = pd.read_csv(file_path, nrows=20000)
     df.columns = [c.strip() for c in df.columns]
+    # 时间字段转为datetime
+    df['UTC'] = pd.to_datetime(df['UTC'])
     if start:
-        df = df[df['UTC'] >= start]
+        start_dt = pd.to_datetime(start)
+        df = df[df['UTC'] >= start_dt]
     if end:
-        df = df[df['UTC'] <= end]
+        end_dt = pd.to_datetime(end)
+        df = df[df['UTC'] <= end_dt]
     if car:
         df = df[df['COMMADDR'].astype(str) == str(car)]
-    result = df[['LAT', 'LON', 'UTC', 'COMMADDR', 'TFLAG', 'status']].head(limit)
+    # 加入HEAD字段
+    result = df[['LAT', 'LON', 'UTC', 'COMMADDR', 'HEAD', 'TFLAG', 'status']]
+
+    if not car:
+        # 如果car为空，自动从CSV中随机选取一个COMMADDR
+        unique_cars = result['COMMADDR'].unique()
+        if len(unique_cars) > 0:
+            car = str(np.random.choice(unique_cars, 1)[0])
+            result = result[result['COMMADDR'].astype(str) == car]
+        else:
+            result = result.head(limit)
+    else:
+        # 有车牌号时，取前 limit 条，保持轨迹连贯
+        result = result[result['COMMADDR'].astype(str) == str(car)].head(limit)
+
     data = [
         {
             'lat': row['LAT'],
             'lon': row['LON'],
             'time': row['UTC'],
             'car': row['COMMADDR'],
+            'head': row['HEAD'],
             'tflag': row['TFLAG'],
             'status': row['status']
         }

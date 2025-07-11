@@ -33,7 +33,8 @@ export default {
       endTime: '',
       carId: '',
       map: null,
-      polyline: null
+      polyline: null,
+      arrowMarkers: [] // 新增：用于存储箭头marker
     };
   },
   mounted() {
@@ -61,6 +62,11 @@ export default {
         this.map.removeOverlay(this.polyline);
         this.polyline = null;
       }
+      // 清除旧的箭头
+      if (this.arrowMarkers && this.arrowMarkers.length > 0) {
+        this.arrowMarkers.forEach(m => this.map.removeOverlay(m));
+        this.arrowMarkers = [];
+      }
       let params = [];
       if (this.startTime) params.push(`start=${encodeURIComponent(this.formatTime(this.startTime))}`);
       if (this.endTime) params.push(`end=${encodeURIComponent(this.formatTime(this.endTime))}`);
@@ -70,11 +76,32 @@ export default {
       try {
         const res = await fetch(url);
         const data = await res.json();
-        const points = data.filter(item => item.lat && item.lon).map(item => new window.BMap.Point(item.lon, item.lat));
+        const points = data.filter(item => item.lat && item.lon).map(item => ({
+          point: new window.BMap.Point(item.lon, item.lat),
+          head: item.head // 方向角度
+        }));
         if (points.length > 0) {
-          this.polyline = new window.BMap.Polyline(points, {strokeColor:"#0288d1", strokeWeight:5, strokeOpacity:0.8});
+          this.polyline = new window.BMap.Polyline(points.map(p => p.point), {strokeColor:"#0288d1", strokeWeight:5, strokeOpacity:0.8});
           this.map.addOverlay(this.polyline);
-          this.map.setViewport(points);
+          this.map.setViewport(points.map(p => p.point));
+          // 给每个点加一个旋转箭头
+          points.forEach(p => {
+            const arrow = new window.BMap.Marker(
+              p.point,
+              {
+                icon: new window.BMap.Symbol("M0,-10 L6,10 L0,5 L-6,10 Z", {
+                  scale: 1.2,
+                  strokeColor: "#0288d1",
+                  strokeWeight: 2,
+                  rotation: p.head || 0, // 直接用head
+                  fillColor: "#0288d1",
+                  fillOpacity: 0.9
+                })
+              }
+            );
+            this.map.addOverlay(arrow);
+            this.arrowMarkers.push(arrow);
+          });
         }
       } catch (e) {
         console.error('轨迹查询失败', e);
