@@ -13,6 +13,7 @@ urlpatterns = [
     path('click_captcha/', views.click_captcha),
     path('click_captcha/verify/', views.click_captcha_verify),
     path('update_profile/', views.update_profile),
+    path('upload_avatar/', views.upload_avatar),
     path('check_email_available/', views.check_email_available),
     path('user_list/', views.user_list),
     path('update_permission/', views.update_permission),

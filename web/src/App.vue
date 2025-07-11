@@ -24,7 +24,7 @@
         </div>
         <div class="user-section">
           <router-link v-if="isAdmin" to="/user-manage" class="logo-text" style="margin-right:18px;">用户管理</router-link>
-          <span class="username clickable" @click="showEdit = true">{{ username }}</span>
+          <router-link to="/profile" class="username clickable">{{ username }}</router-link>
           <button @click="logout" class="logout-btn">退出</button>
         </div>
       </div>
@@ -34,35 +34,6 @@
       <main>
         <router-view />
       </main>
-    </div>
-    <!-- 编辑信息弹窗 -->
-    <div v-if="showEdit" class="edit-modal">
-      <div class="edit-modal-content">
-        <h3>编辑个人信息</h3>
-        <form @submit.prevent="handleEditSave">
-          <div class="form-group">
-            <label>邮箱：</label>
-            <input v-model="editEmail" type="email" required />
-            <button type="button" @click="sendEditEmailCode" :disabled="emailCodeSent" style="margin-left:8px;">{{ emailCodeSent ? '已发送' : '发送验证码' }}</button>
-          </div>
-          <div class="form-group">
-            <label>验证码：</label>
-            <input v-model="editEmailCode" type="text" placeholder="请输入验证码" />
-          </div>
-          <div class="form-group">
-            <label>新密码：</label>
-            <input v-model="editPassword" type="password" placeholder="不修改请留空" />
-          </div>
-          <div class="form-group">
-            <label>确认新密码：</label>
-            <input v-model="editPassword2" type="password" placeholder="请再次输入新密码" />
-          </div>
-          <div style="text-align:right;">
-            <button type="button" @click="showEdit = false" class="logout-btn" style="margin-right:10px;">取消</button>
-            <button type="submit" class="logout-btn" style="background:#00a1d6;">保存</button>
-          </div>
-        </form>
-      </div>
     </div>
   </div>
 </template>
@@ -121,67 +92,6 @@ onUnmounted(() => {
   window.removeEventListener('updateUserPermission', updateUserPermission);
 });
 const isAdmin = computed(() => userPermissionRef.value == '2');
-
-const showEdit = ref(false);
-const editEmail = ref(localStorage.getItem('email') || '');
-const editEmailCode = ref('');
-const emailCodeSent = ref(false);
-const editPassword = ref('');
-const editPassword2 = ref('');
-
-const sendEditEmailCode = async () => {
-  if (!editEmail.value) {
-    alert('请输入新邮箱');
-    return;
-  }
-  // 新增：先校验邮箱是否可用
-  try {
-    const checkRes = await axios.post('/api/check_email_available/', {
-      email: editEmail.value,
-      username: localStorage.getItem('name')
-    }, { withCredentials: true });
-    if (!checkRes.data.available) {
-      alert(checkRes.data.msg || '当前邮箱已被绑定');
-      return;
-    }
-  } catch (err) {
-    alert('邮箱校验失败：' + (err.response?.data?.msg || err.message));
-    return;
-  }
-  // 校验通过再发送验证码
-  try {
-    await axios.post('/api/send_email_code', { email: editEmail.value }, { withCredentials: true });
-    emailCodeSent.value = true;
-    alert('验证码已发送到新邮箱');
-    setTimeout(() => { emailCodeSent.value = false; }, 60000); // 1分钟后可重新发送
-  } catch (err) {
-    alert('验证码发送失败：' + (err.response?.data?.msg || err.message));
-  }
-};
-
-const handleEditSave = async () => {
-  if (editPassword.value && editPassword.value !== editPassword2.value) {
-    alert('两次输入的新密码不一致');
-    return;
-  }
-  try {
-    const payload = {
-      username: localStorage.getItem('name'),
-      email: editEmail.value,
-      password: editPassword.value,
-      email_code: editEmailCode.value
-    };
-    const res = await axios.post('/api/update_profile/', payload, { withCredentials: true });
-    if (res.data && res.data.msg) alert(res.data.msg);
-    if (editEmail.value) localStorage.setItem('email', editEmail.value);
-    editPassword.value = '';
-    editPassword2.value = '';
-    editEmailCode.value = '';
-    showEdit.value = false;
-  } catch (err) {
-    alert('修改失败：' + (err.response?.data?.msg || err.message));
-  }
-};
 
 const logout = () => {
   localStorage.removeItem('name');

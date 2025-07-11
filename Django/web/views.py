@@ -546,11 +546,22 @@ def update_profile(request):
     new_email = request.data.get('email')
     new_password = request.data.get('password')
     email_code = request.data.get('email_code')
+    new_username = request.data.get('new_username')  # 新增用户名修改字段
     if not username:
         return Response({'msg': '用户名不能为空'}, status=400)
     try:
         user = UserProfile.objects.get(username=username)
         updated = False
+        # 用户名修改（唯一性校验）
+        if new_username and new_username != user.username:
+            if UserProfile.objects.filter(username=new_username).exists():
+                return Response({'msg': '新用户名已存在'}, status=400)
+            old_username = user.username
+            user.username = new_username
+            updated = True
+            # 同步人脸库face_id（如有）
+            if user.face_id:
+                user.face_id = user.face_id.replace(str(old_username), str(new_username))
         # 邮箱更改需要验证码校验
         if new_email and new_email != user.email:
             if not email_code:
@@ -561,7 +572,7 @@ def update_profile(request):
             if email_code != real_code:
                 return Response({'msg': '验证码错误'}, status=400)
             # 检查邮箱唯一性
-            if UserProfile.objects.filter(email=new_email).exclude(username=username).exists():
+            if UserProfile.objects.filter(email=new_email).exclude(username=user.username).exists():
                 return Response({'msg': '该邮箱已被其他用户占用'}, status=400)
             user.email = new_email
             updated = True
@@ -757,41 +768,21 @@ def face_verify_one_to_one(request):
         return Response({'msg': f'比对过程出错: {str(e)}'}, status=500)
     
 @api_view(['POST'])
-def face_verify_one_to_one(request):
-    """1:1人脸比对接口：当前用户主头像face_token vs 现场图片base64"""
-    username = request.data.get('username') or request.session.get('username')
+@parser_classes([MultiPartParser, FormParser])
+def upload_avatar(request):
+    username = request.data.get('username')
     if not username:
-        return Response({'msg': '未登录，无法比对'}, status=401)
+        return Response({'msg': '用户名不能为空'}, status=400)
     try:
         user = UserProfile.objects.get(username=username)
+        avatar = request.FILES.get('avatar')
+        if not avatar:
+            return Response({'msg': '请上传头像文件'}, status=400)
+        user.face_image = avatar
+        user.save()
+        return Response({'msg': '头像上传成功', 'avatar_url': user.face_image.url})
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=404)
-    # 获取主头像face_token
-    main_face = user.face_images.first()  # 取第一张人脸图片
-    if not main_face or not main_face.face_token:
-        return Response({'msg': '用户主头像未同步到百度云或未注册face_token'}, status=400)
-    if 'image' not in request.FILES:
-        return Response({'msg': '请上传现场图片'}, status=400)
-    img2 = request.FILES['image']
-    img2_base64 = base64.b64encode(img2.read()).decode()
-    # 用face_token和base64做比对
-    url = f"https://aip.baidubce.com/rest/2.0/face/v3/match?access_token={get_baidu_token()}"
-    headers = {'Content-Type': 'application/json'}
-    data = [
-        {"image": main_face.face_token, "image_type": "FACE_TOKEN", "face_type": "LIVE", "quality_control": "LOW", "liveness_control": "NORMAL"},
-        {"image": img2_base64, "image_type": "BASE64", "face_type": "LIVE", "quality_control": "LOW", "liveness_control": "NORMAL"}
-    ]
-    try:
-        resp = requests.post(url, data=json.dumps(data), headers=headers)
-        result = resp.json()
-        if result.get('error_code') == 0:
-            score = result['result']['score']
-            passed = score >= 80
-            return Response({'msg': '比对成功', 'score': score, 'passed': passed})
-        else:
-            return Response({'msg': f"比对失败: {result.get('error_msg')}", 'raw': result}, status=400)
-    except Exception as e:
-        return Response({'msg': f'比对过程出错: {str(e)}'}, status=500)
     
 def get_client_ip(request):
     """获取客户端真实IP"""

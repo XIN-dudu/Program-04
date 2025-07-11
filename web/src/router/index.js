@@ -33,6 +33,7 @@ const routes = [
   { path: '/register', component: () => import('../views/Register.vue') },
   { path: '/face-recognition', component: () => import('../views/FaceRecognition.vue'), meta: { requiresAuth: true } },
   { path: '/liveness', component: () => import('../views/LivenessDetection.vue'), meta: { requiresAuth: true } },
+  { path: '/profile', component: () => import('../views/UserProfile.vue'), meta: { requiresAuth: true } },
   {
     path: '/user-manage',
     name: 'UserManage',
