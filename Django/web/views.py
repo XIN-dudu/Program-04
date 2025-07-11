@@ -6,8 +6,10 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import parser_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
+from rest_framework.pagination import PageNumberPagination
 
-from web.serializers import UserSerializer
+import datetime
+from web.serializers import UserSerializer,LogSerializer
 from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY, SystemLog
 import random
 import smtplib
@@ -909,3 +911,52 @@ def create_log(request,user, level, action, details):
     #     serializer.save()
     #     # return Response(serializer.data, status=status.HTTP_201_CREATED)
     # # return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+   
+@api_view(['GET'])
+def log_list(request):
+    # 获取查询参数
+    level = request.query_params.get('level')
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+
+    # 初始化查询集
+    logs = SystemLog.objects.all().select_related('user')
+
+    # 根据参数过滤
+    if level:
+        logs = logs.filter(level=level)
+
+    if start_date:
+        try:
+            start = timezone.make_aware(datetime.datetime.strptime(start_date, "%Y-%m-%d"))
+            logs = logs.filter(timestamp__gte=start)
+        except ValueError:
+            return Response({"error": "无效的开始日期格式，请使用 YYYY-MM-DD"}, status=400)
+
+    if end_date:
+        try:
+            end = timezone.make_aware(datetime.datetime.strptime(end_date, "%Y-%m-%d"))
+            logs = logs.filter(timestamp__lte=end)
+        except ValueError:
+            return Response({"error": "无效的结束日期格式，请使用 YYYY-MM-DD"}, status=400)
+
+    # 分页处理
+    paginator = StandardResultsSetPagination()
+    page = paginator.paginate_queryset(logs, request)
+
+    # 序列化
+    serializer = LogSerializer(page, many=True)
+
+    # 返回分页响应
+    # return paginator.get_paginated_response(serializer.data)
+    return Response({
+        'results': serializer.data,
+        'current_page': paginator.page.number,
+        'page_size': paginator.page.paginator.per_page,
+        'total': paginator.page.paginator.count
+    })
