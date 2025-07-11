@@ -242,6 +242,7 @@ def login(request):
     try:
         user = UserProfile.objects.get(username=username)
         if user.password == password:
+            request.session['username'] = user.username  # 登录成功写入session
             create_log(request,user,'info', '用户登入成功', f'用户名: {username}')
             return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
         else:
@@ -308,6 +309,7 @@ def email_login(request):
     try:
         user = UserProfile.objects.get(email=email)
         # 登录成功后可做session/token等处理
+        request.session['username'] = user.username  # 邮箱登录成功写入session
         return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
@@ -875,9 +877,13 @@ def upload_avatar(request):
         avatar = request.FILES.get('avatar')
         if not avatar:
             return Response({'msg': '请上传头像文件'}, status=400)
-        user.face_image = avatar
+        user.avatar = avatar
         user.save()
-        return Response({'msg': '头像上传成功', 'avatar_url': user.face_image.url})
+        # 保证返回/media/avatars/xxx.jpg格式
+        avatar_url = user.avatar.url
+        if not avatar_url.startswith('/media/'):
+            avatar_url = '/media/' + user.avatar.name
+        return Response({'msg': '头像上传成功', 'avatar_url': avatar_url})
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=404)
     
@@ -909,3 +915,24 @@ def create_log(request,user, level, action, details):
     #     serializer.save()
     #     # return Response(serializer.data, status=status.HTTP_201_CREATED)
     # # return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+def current_user_profile(request):
+    """
+    获取当前登录用户信息。
+    GET: 返回当前用户的详细信息（含头像URL）。
+    """
+    username = request.session.get('username') or request.GET.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+        data = {
+            'username': user.username,
+            'email': user.email,
+            'permission': user.permission,
+            'avatar_url': user.avatar.url if user.avatar else None
+        }
+        return Response(data)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)

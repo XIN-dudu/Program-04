@@ -64,6 +64,7 @@ class UserProfile(models.Model):
     face_id = models.CharField(max_length=128, blank=True, null=True)
     # 主要头像图片
     face_image = EncryptedImageField(upload_to=user_face_path, blank=True, null=True)
+    avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)  # 新增用户头像字段
     # 用户权限：0-普通用户，1-维修工，2-管理员
     permission = models.IntegerField(choices=[
         (0, '普通用户'),

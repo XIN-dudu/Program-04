@@ -7,19 +7,12 @@
           <img :src="avatarUrl" class="avatar-light" @click="onAvatarClick" />
           <input type="file" ref="avatarInput" style="display:none" @change="onAvatarChange" />
         </div>
-        <div class="profile-nick-block-row lower-nick-block">
-          <div class="nickname-light">{{ user.username }}</div>
-          <button class="edit-btn-light modify-btn" @click="showEditAll = true">修改密码</button>
-        </div>
       </div>
       <div class="profile-info-card-light">
-        <div class="info-row-light"><span class="info-label-light">用户名</span><span>{{ user.username }}</span><button class="edit-btn-light" @click="showEditNick = true">编辑</button></div>
-        <div class="info-row-light"><span class="info-label-light">电子邮箱</span><span>{{ user.email }}</span><button class="edit-btn-light" @click="showEditEmail = true">编辑</button></div>
-        <div class="info-row-light permission-row-fix">
-          <span class="info-label-light">权限</span>
-          <span class="permission-value">{{ permissionText }}</span>
-          <button class="edit-btn-light fixed-btn" disabled>固定</button>
-        </div>
+        <div class="info-row-light"><span class="info-label-light">用户名</span><span class="info-value-center">{{ user.username }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
+        <div class="info-row-light"><span class="info-label-light">电子邮箱</span><span class="info-value-center">{{ user.email }}</span><button class="edit-btn-light" @click="showEditEmail = true">编辑</button></div>
+        <div class="info-row-light permission-row-fix"><span class="info-label-light">权限</span><span class="info-value-center permission-value">{{ permissionText }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
+        <div class="info-row-light no-border info-row-password-btn"><button class="edit-btn-light left-btn" @click="showEditAll = true">修改密码</button></div>
       </div>
     </div>
     <!-- 编辑邮箱弹窗 -->
@@ -102,20 +95,30 @@ export default {
     }
   },
   created() {
-    let user = localStorage.getItem('user');
-    if (user) {
-      this.user = JSON.parse(user);
-    } else {
-      // 兼容未存user对象的情况，从单独字段组装
-      this.user = {
-        username: localStorage.getItem('name') || '-',
-        email: localStorage.getItem('email') || '-',
-        permission: localStorage.getItem('permission') || '-'
-      };
-    }
-    this.avatarUrl = this.user.avatar || require('@/assets/default-avatar.png');
-    this.email = this.user.email;
-    this.editNick = this.user.username;
+    const API_BASE = process.env.VUE_APP_API_BASE || 'http://localhost:8000';
+    axios.get(API_BASE + '/api/user/profile/', { withCredentials: true })
+      .then(res => {
+        this.user = res.data;
+        this.avatarUrl = res.data.avatar_url
+          ? (res.data.avatar_url.startsWith('http') ? res.data.avatar_url : (API_BASE + res.data.avatar_url))
+          : require('@/assets/default-avatar.png');
+        // 同步localStorage
+        localStorage.setItem('user', JSON.stringify(this.user));
+        this.email = this.user.email;
+        this.editNick = this.user.username;
+      })
+      .catch(() => {
+        // 兜底：localStorage
+        let user = localStorage.getItem('user');
+        if (user) {
+          this.user = JSON.parse(user);
+          this.avatarUrl = this.user.avatar
+            ? (this.user.avatar.startsWith('http') ? this.user.avatar : (API_BASE + this.user.avatar))
+            : require('@/assets/default-avatar.png');
+          this.email = this.user.email;
+          this.editNick = this.user.username;
+        }
+      });
   },
   methods: {
     onAvatarClick() {
@@ -124,11 +127,36 @@ export default {
     onAvatarChange(e) {
       const file = e.target.files[0];
       this.avatarUrl = URL.createObjectURL(file);
-      // TODO: 上传到后端并保存
+      // 上传到后端
+      const formData = new FormData();
+      formData.append('username', this.user.username);
+      formData.append('avatar', file);
+      axios.post((process.env.VUE_APP_API_BASE || 'http://localhost:8000') + '/api/upload_avatar/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      }).then(res => {
+        alert(res.data.msg);
+        if (res.data.avatar_url) {
+          // 自动拼接API_BASE，适配本地和生产
+          const API_BASE = process.env.VUE_APP_API_BASE || '';
+          this.avatarUrl = res.data.avatar_url.startsWith('http') ? res.data.avatar_url : (API_BASE + res.data.avatar_url);
+          // 更新localStorage中的头像字段，保证刷新/登录后头像不丢失
+          let user = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : {};
+          user.avatar = res.data.avatar_url;
+          localStorage.setItem('user', JSON.stringify(user));
+        }
+      });
     },
     sendEmailCode() {
-      axios.post('/api/send_email_code', { email: this.editEmail }).then(res => {
-        alert(res.data.msg);
+      axios.post('http://localhost:8000/api/check_email_available/', {
+        email: this.editEmail
+      }).then(res => {
+        if (!res.data.available) {
+          alert('该邮箱已被注册');
+        } else {
+          axios.post('http://localhost:8000/api/send_email_code/', { email: this.editEmail }).then(res2 => {
+            alert(res2.data.msg);
+          });
+        }
       });
     },
     updateEmail() {
@@ -230,7 +258,7 @@ export default {
   align-items: center;
   justify-content: flex-start;
   height: 88px;
-  margin-top: 10px; /* 整体向下移动8px */
+  margin-top: 44px; /* 向下移，与头像垂直居中 */
 }
 .nickname-light {
   font-size: 1.5em;
@@ -238,7 +266,9 @@ export default {
   color: #333;
   margin-bottom: 0;
   margin-right: 18px;
-  line-height: 88px; /* 保证和按钮高度对齐 */
+  line-height: 88px;
+  display: flex;
+  align-items: center;
 }
 .edit-btn-light {
   background: #1890ff;
@@ -368,5 +398,21 @@ input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focu
 }
 .lower-nick-block {
   margin-top: 38px; /* 让用户名和按钮整体下移，贴近header底部 */
+}
+.info-row-password-btn {
+  justify-content: flex-start;
+  border-bottom: none;
+  margin-top: 10px;
+}
+.left-btn {
+  margin-left: 0;
+  margin-right: auto;
+  display: block;
+}
+.info-value-center {
+  flex: 1;
+  text-align: center;
+  font-size: 1.1em;
+  color: #222;
 }
 </style> 
