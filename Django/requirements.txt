@@ -8,3 +8,4 @@ requests
 pandas
 numpy
 drf-yasg 
+channels

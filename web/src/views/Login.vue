@@ -146,6 +146,7 @@ const handleLogin = async () => {
       // 登录成功后
       if (response.data.name) {
         window.dispatchEvent(new CustomEvent('updateUserName', { detail: response.data.name }));
+        window.location.reload();
       }
       if (response.data.permission !== undefined) {
         window.dispatchEvent(new CustomEvent('updateUserPermission', { detail: response.data.permission }));
@@ -228,6 +229,7 @@ const handleEmailLogin = async () => {
       // 登录成功后
       if (res.data.name) {
         window.dispatchEvent(new CustomEvent('updateUserName', { detail: res.data.name }));
+        window.location.reload();
       }
       if (res.data.permission !== undefined) {
         window.dispatchEvent(new CustomEvent('updateUserPermission', { detail: res.data.permission }));
