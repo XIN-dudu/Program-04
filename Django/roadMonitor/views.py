@@ -11,16 +11,12 @@ import os
 from django.conf import settings
 import pandas as pd
 from datetime import datetime, timedelta
-import json
-from channels.generic.websocket import AsyncWebsocketConsumer
+from django.conf import settings
+from ultralytics import YOLO
+import cv2
+import os
 
-issues = [
-    {'title': '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区'},
-    {'title': '横向裂纹', 'description': '监测到横向裂纹约20米', 'severity': '严重', 'position': '翻斗花园123街区'},
-    {'title': '龟裂', 'description': '道路出现微笑裂纹，覆盖区域仅1平方米，建议及时修复', 'severity': '轻微', 'position': '翻斗花园123街区'},
-    {'title': '坑洼', 'description': '坑洞深114514米，半径长1919810米，没救了', 'severity': '严重', 'position': '翻斗花园123街区'},
-    {'title': '无损害', 'description': '道路完整', 'severity': '安全', 'position': '翻斗花园123街区'}
-]
+model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
 # Create your views here.
 
 # #获取路面图像信息
@@ -42,24 +38,37 @@ def upload_image(request):
     
     try:
         # 创建子目录路径
-        subdir = 'road/'
+        subdir = 'road'
         save_path = os.path.join(subdir, file.name)
         # 保存文件
         filename = default_storage.save(save_path, file)
-        # 生成完整URL
-        file_url = request.build_absolute_uri(default_storage.url(filename))
-
-        return Response({'message': '上传成功'}, status=200)
+        print(filename)
+        local_path = default_storage.path(filename)
+        print(local_path)
+        results = model(
+            local_path,
+            save=True,
+            conf=0.5,
+            project=os.path.join(settings.MEDIA_ROOT, subdir),  # 指定根目录
+            name='results',    # 创建results子目录
+            exist_ok=True
+        )
+        # 获取处理后的图片路径
+        processed_dir = os.path.join(settings.MEDIA_ROOT, subdir, 'results')
+        processed_filename = os.path.basename(file.name)
+        processed_path = os.path.join(processed_dir, processed_filename)
+        print(processed_path)
+        # 验证文件是否存在
+        if not os.path.exists(processed_path):
+            return JsonResponse({'status': 'error', 'message': '处理后的图片未生成'}, status=500)
+        # 构建完整的URL
+        relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', processed_filename)
+        image_url = request.build_absolute_uri(relative_url)
+        print(image_url)
+        return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', 'image_url': image_url}, status=200)
     
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
-
-@api_view(['POST'])
-@parser_classes([MultiPartParser, FormParser])
-def get_result(request):
-    #file = request.FILES.get('file')
-    #roadId = request.POST.get('roadId')
-    return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区'}, status=200)
 
 @api_view(['GET'])
 def history_get(request):

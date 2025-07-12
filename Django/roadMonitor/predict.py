@@ -1,24 +1,38 @@
 import os
 from ultralytics import YOLO
+from django.conf import settings
 
-if __name__ == "__main__":
-    pth_path = r"roadMonitor/best.pt"
+def predict_image(test_path):
+    print(1)
+    # 创建结果保存目录（YOLO会自动创建子目录）
+    pth_path=r"Django/best.pt"
+    save_dir=r"Django/media/road"
+    os.makedirs(save_dir, exist_ok=True)
 
-    test_path = r"media/road/China_Drone_000008.jpg"
-
-    # 指定自定义保存路径（需要先创建目录）
-    save_dir = r"media/road/results"  # 你的目标路径
-    os.makedirs(save_dir, exist_ok=True)  # 自动创建目录（如果不存在）
-
-    # Load a model
-    # model = YOLO('yolov8n.pt')  # load an official model
-    model = YOLO(pth_path)  # load a custom model
-
-    # Predict with the model
-    # 预测并指定保存路径
+    print(2)
+    model = YOLO(pth_path)
+    
+    print(3)
+    # 执行预测
     results = model(
         test_path,
         save=True,
         conf=0.5,
-        project=save_dir  # 关键参数：指定保存目录
+        project=save_dir,  # 指定根目录
+        name='results',    # 创建results子目录
+        exist_ok=True
     )
+    
+    print(4)
+    # 解析预测结果路径
+    file_name = os.path.basename(test_path)
+    print(5)
+    
+    # 构造完整结果路径：Django/media/road/results/
+    return os.path.join(save_dir, 'results', file_name)
+
+if __name__ == "__main__":
+    test_path = r"Django/media/road/China_Drone_000002.jpg"
+    print(predict_image(test_path))
+
+    # print(os.path.join(settings.BASE_DIR, "roadMonitor", "best.pt"))

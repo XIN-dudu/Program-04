@@ -42,12 +42,15 @@
     <div class="right-panel">
       <div class="result-header">检测结果：</div>
       <div class="result-list">
-        <p v-if="result == null">具体展示结果</p>
+        <p v-if="!result">具体展示结果</p>
         <p v-else class="result-card">
           <h3>{{ result.title }}</h3>
           <p>{{ result.description }}</p>
           <p><strong>严重程度:</strong> {{ result.severity }}</p>
           <p>{{ result.position }}</p>
+          <div v-if="result.image_url" class="result-image">
+            <img :src="result.image_url" alt="检测结果示意图" />
+          </div>
         </p>
       </div>
     </div>
@@ -220,7 +223,7 @@ const takePhoto = () => {
   canvas.height = video.videoHeight || 480
   const ctx = canvas.getContext('2d')
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-  const dataUrl = canvas.toDataURL('image/png')
+  const dataUrl = canvas.toDataURL('image/jpg')
   photoDataUrl.value = dataUrl
 
   //清空 video 内容，确保视频不再显示
@@ -235,8 +238,8 @@ const takePhoto = () => {
   mediaPreviewUrl.value = dataUrl
   // 生成Blob对象
   canvas.toBlob(async (blob) => {
-    const file = new File([blob], `photo_${Date.now()}.png`, {
-      type: 'image/png'
+    const file = new File([blob], `photo_${Date.now()}.jpg`, {
+      type: 'image/jpg'
     })
     // 更新状态
     selectedFile.value = file
@@ -245,7 +248,7 @@ const takePhoto = () => {
     isVideo.value = false
     videoActive.value = false
     stop()
-  }, 'image/png')
+  }, 'image/jpg')
 
 }
 
@@ -286,6 +289,10 @@ const stopCamera = async () => {
   photoDataUrl.value = ''
   recordedVideoUrl.value = ''
   recording.value = false
+  if (mediaPreviewUrl.value) {
+    URL.revokeObjectURL(mediaPreviewUrl.value)
+    mediaPreviewUrl.value = ''
+  }
 
   if (fileInput.value) fileInput.value.value = ''
 
@@ -313,6 +320,12 @@ const triggerUpload = () => {
 }
 
 const handleUpload = async e => {
+
+  if (mediaPreviewUrl.value) {
+    URL.revokeObjectURL(mediaPreviewUrl.value)
+    mediaPreviewUrl.value = ''
+  }
+
   const file = e.target.files[0]
   if (!file) return
   selectedFile.value = file
@@ -346,7 +359,7 @@ const detectIssues = async () => {
     formData.append('roadId', roadId.value)
     detectionInProgress.value = true
     try {
-      const response = await axios.post('http://localhost:8000/road/get_result', formData, {
+      const response = await axios.post('http://localhost:8000/road/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -355,7 +368,8 @@ const detectIssues = async () => {
         title: response.data.title,
         description: response.data.description,
         severity: response.data.severity,
-        position: response.data.position
+        position: response.data.position,
+        image_url: response.data.image_url 
       }
       //alert("success")
       console.log('上传成功:', result)
@@ -374,6 +388,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopCamera()
 })
+
 </script>
 
 <style scoped>
@@ -480,5 +495,20 @@ button:disabled {
   border-radius: 6px;
   border: 1px solid #ccc;
   margin-top: 8px;
+}
+
+.result-image {
+  margin-top: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+}
+ 
+.result-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+  max-height: 300px;
+  object-fit: contain;
 }
 </style>
