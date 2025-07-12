@@ -12,6 +12,11 @@ module.exports = {
         target: 'http://localhost:8000',
         changeOrigin: true,
         pathRewrite: { '^/road': '/road' }
+      },
+      '/media': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        // 不需要pathRewrite，直接转发
       }
     }
   }

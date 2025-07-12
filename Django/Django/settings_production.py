@@ -16,7 +16,9 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-@l+)l^ure&c4_0$4(*@e4
 DEBUG = False
 
 # 替换为您的云服务器IP或域名
-ALLOWED_HOSTS = ['your-server-ip', 'your-domain.com', 'localhost']
+
+ALLOWED_HOSTS = ['971646.xyz', 'www.971646.xyz', '120.46.211.91', 'localhost']
+
 
 # 数据库配置（使用环境变量）
 DATABASES = {
@@ -52,4 +54,21 @@ X_FRAME_OPTIONS = 'DENY'
 
 # 会话安全
 SESSION_COOKIE_SECURE = True
+
 CSRF_COOKIE_SECURE = True 
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://971646.xyz",
+    "https://971646.xyz",
+    "http://www.971646.xyz",
+    "https://www.971646.xyz",
+]
+12
+CSRF_TRUSTED_ORIGINS = [
+    "http://971646.xyz",
+    "https://971646.xyz",
+    "http://www.971646.xyz",
+    "https://www.971646.xyz",
+]
+

@@ -84,6 +84,11 @@ def add_face_to_baidu(image_path, user_id, user_info=None):
 
 @api_view(['GET', 'POST'])
 def get_data(request):
+    """
+    获取所有用户数据或新增用户数据。
+    GET: 返回所有用户信息列表。
+    POST: 新增用户（测试用）。
+    """
     if request.method == 'GET':
         user = UserProfile.objects.all()
         serializer = UserSerializer(user, many=True)
@@ -96,6 +101,12 @@ def get_data(request):
 
 @api_view(['GET', 'PUT', 'DELETE'])
 def user_detail(request, id):
+    """
+    用户详情接口。
+    GET: 获取指定id用户信息。
+    PUT: 更新指定id用户信息。
+    DELETE: 删除指定id用户。
+    """
     try:
         user = UserProfile.objects.get(id = id)
     except UserProfile.DoesNotExist:
@@ -117,6 +128,11 @@ def user_detail(request, id):
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def register(request):
+    """
+    用户注册接口。
+    POST参数：username, password, email, phone, permission, face_images(多张人脸图片)
+    返回：注册结果信息。
+    """
     # 获取基本用户信息
     username = request.data.get('username')
     password = request.data.get('password')
@@ -193,34 +209,63 @@ def register(request):
 # 登录接口
 @api_view(['POST'])
 def login(request):
+    """
+    用户登录接口。
+    POST参数：username, password, captcha_id, captcha_clicks
+    返回：登录结果、用户信息。
+    """
     username = request.data.get('username') or request.data.get('name')
     password = request.data.get('password')
-    print('收到登录请求:', username, password)
+    captcha_id = request.data.get('captcha_id')
+    captcha_clicks = request.data.get('captcha_clicks')
+    # 验证码校验（如果前端有传）
+    if captcha_id and captcha_clicks:
+        session_key = 'click_captcha_%s' % captcha_id
+        captcha_data = request.session.get(session_key)
+        if not captcha_data:
+            return Response({'msg': '验证码已过期', 'reason': 'captcha_expired'}, status=status.HTTP_400_BAD_REQUEST)
+        targets = captcha_data['targets']
+        positions = captcha_data['positions']
+        checked = 0
+        for i, target in enumerate(targets):
+            for pos in positions:
+                if pos['word'] == target:
+                    x0, y0, w, h = pos['x'], pos['y'], pos['w'], pos['h']
+                    x, y = captcha_clicks[i]['x'], captcha_clicks[i]['y']
+                    if x0 <= x <= x0 + w and y0 <= y <= y0 + h:
+                        checked += 1
+                    break
+        if checked != 4:
+            return Response({'msg': '验证码错误', 'reason': 'captcha_error'}, status=status.HTTP_400_BAD_REQUEST)
     if not username or not password:
-        print('用户名或密码为空')
-        return Response({'msg': '用户名和密码不能为空'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'msg': '用户名和密码不能为空', 'reason': 'empty'}, status=status.HTTP_400_BAD_REQUEST)
     try:
         user = UserProfile.objects.get(username=username)
         if user.password == password:
-            print('登录成功:', username)
+            request.session['username'] = user.username  # 登录成功写入session
             create_log(request,user,'info', '用户登入成功', f'用户名: {username}')
             return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
         else:
-            print('密码错误:', username)
             create_log(request,user,'info', '用户登入失败', f'用户名: {username}，密码错误')
-            return Response({'msg': '密码错误'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'msg': '密码错误', 'reason': 'password_error'}, status=status.HTTP_400_BAD_REQUEST)
     except UserProfile.DoesNotExist:
-        print('用户不存在:', username)
         create_log(request,None,'info', '用户登入失败', f'用户名: {username}，用户不存在')
-        return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'msg': '用户不存在', 'reason': 'user_not_found'}, status=status.HTTP_400_BAD_REQUEST)
 
 # 发送邮箱验证码接口
 @api_view(['POST'])
 def send_email_code(request):
+    """
+    发送邮箱验证码接口。
+    POST参数：email
+    返回：发送结果。
+    """
     email = request.data.get('email')
     if not email:
         return Response({'msg': '邮箱不能为空'}, status=status.HTTP_400_BAD_REQUEST)
-    # 允许任意邮箱发送验证码，不校验是否注册
+    # 新增：先判断邮箱是否已注册
+    if not UserProfile.objects.filter(email=email).exists():
+        return Response({'msg': '该邮箱未注册'}, status=status.HTTP_400_BAD_REQUEST)
     # 生成6位验证码
     code = str(random.randint(100000, 999999))
     # 发送邮件
@@ -247,6 +292,11 @@ def send_email_code(request):
 # 邮箱验证码登录接口
 @api_view(['POST'])
 def email_login(request):
+    """
+    邮箱验证码登录接口。
+    POST参数：email, email_code
+    返回：登录结果、用户信息。
+    """
     email = request.data.get('email')
     code = request.data.get('code')
     if not email or not code:
@@ -259,6 +309,7 @@ def email_login(request):
     try:
         user = UserProfile.objects.get(email=email)
         # 登录成功后可做session/token等处理
+        request.session['username'] = user.username  # 邮箱登录成功写入session
         return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
@@ -267,6 +318,11 @@ def email_login(request):
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def face_recognition(request):
+    """
+    人脸识别登录接口。
+    POST参数：username, image(现场图片)
+    返回：识别结果。
+    """
     """人脸识别接口，通过上传图片识别用户"""
     if 'image' not in request.FILES:
         return Response({'msg': '请上传图片'}, status=status.HTTP_400_BAD_REQUEST)
@@ -342,6 +398,11 @@ def face_recognition(request):
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def liveness_detection(request):
+    """
+    活体检测接口。
+    POST参数：username, image(现场图片)
+    返回：活体检测结果。
+    """
     """活体检测+1对N识别接口，接收图片，调用百度V3接口"""
     if 'image' not in request.FILES:
         return Response({'msg': '请上传图片'}, status=status.HTTP_400_BAD_REQUEST)
@@ -395,6 +456,11 @@ def liveness_detection(request):
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def liveness_check(request):
+    """
+    活体检测二次接口。
+    POST参数：username, image(现场图片)
+    返回：活体检测结果。
+    """
     """活体检测接口，接收视频，调用百度H5 API"""
     if 'video' not in request.FILES:
         return Response({'msg': '请上传视频', 'raw': None}, status=status.HTTP_400_BAD_REQUEST)
@@ -435,6 +501,11 @@ def liveness_check(request):
 
 @api_view(['GET'])
 def click_captcha(request):
+    """
+    获取点击验证码图片和内容。
+    GET: 返回验证码图片和内容。
+    """
+    """生成文字验证码"""
     # 生成6个随机汉字
     hanzi_list = list('的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今集温传土许步群广石记需段研界拉林律叫且究观越织装影算低持音众书布复容儿须际商非验连断深难近矿千周委素技备半办青省列习便响约支般史感劳便团往酸历市克何除消构府称太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价严龙飞'
     )
@@ -498,17 +569,22 @@ def click_captcha(request):
 
 @api_view(['POST'])
 def click_captcha_verify(request):
+    """
+    检查验证码有效性。
+    POST参数：captcha_id, captcha_clicks
+    返回：校验结果。
+    """
+    """检查验证码有效性"""
     captcha_id = request.data.get('captcha_id')
     clicks = request.data.get('clicks')  # [{x: , y: }, ...]
     if not captcha_id or not clicks or len(clicks) != 4:
-        return Response({'msg': '参数错误'}, status=400)
+        return Response({'msg': '参数错误', 'reason': 'param_error'}, status=400)
     session_key = 'click_captcha_%s' % captcha_id
     captcha_data = request.session.get(session_key)
     if not captcha_data:
-        return Response({'msg': '验证码已过期'}, status=400)
+        return Response({'msg': '验证码已过期', 'reason': 'captcha_expired'}, status=400)
     targets = captcha_data['targets']
     positions = captcha_data['positions']
-    # 依次校验点击是否落在目标汉字区域
     checked = 0
     for i, target in enumerate(targets):
         for pos in positions:
@@ -521,19 +597,35 @@ def click_captcha_verify(request):
     if checked == 4:
         return Response({'msg': 'success'})
     else:
-        return Response({'msg': 'fail'}, status=400)
+        return Response({'msg': '验证码错误', 'reason': 'captcha_error'}, status=400)
 
 @api_view(['POST'])
 def update_profile(request):
+    """
+    用户信息修改接口。
+    POST参数：username, new_username(可选), email(可选), password(可选), email_code(可选)
+    返回：修改结果。
+    """
     username = request.data.get('username')
     new_email = request.data.get('email')
     new_password = request.data.get('password')
     email_code = request.data.get('email_code')
+    new_username = request.data.get('new_username')  # 新增用户名修改字段
     if not username:
         return Response({'msg': '用户名不能为空'}, status=400)
     try:
         user = UserProfile.objects.get(username=username)
         updated = False
+        # 用户名修改（唯一性校验）
+        if new_username and new_username != user.username:
+            if UserProfile.objects.filter(username=new_username).exists():
+                return Response({'msg': '新用户名已存在'}, status=400)
+            old_username = user.username
+            user.username = new_username
+            updated = True
+            # 同步人脸库face_id（如有）
+            if user.face_id:
+                user.face_id = user.face_id.replace(str(old_username), str(new_username))
         # 邮箱更改需要验证码校验
         if new_email and new_email != user.email:
             if not email_code:
@@ -544,7 +636,7 @@ def update_profile(request):
             if email_code != real_code:
                 return Response({'msg': '验证码错误'}, status=400)
             # 检查邮箱唯一性
-            if UserProfile.objects.filter(email=new_email).exclude(username=username).exists():
+            if UserProfile.objects.filter(email=new_email).exclude(username=user.username).exists():
                 return Response({'msg': '该邮箱已被其他用户占用'}, status=400)
             user.email = new_email
             updated = True
@@ -561,6 +653,12 @@ def update_profile(request):
     
 @api_view(['POST'])
 def check_email_available(request):
+    """
+    检查邮箱是否可用接口。
+    POST参数：email, username(可选)
+    返回：邮箱可用性。
+    """
+    """邮箱有效性校验"""
     email = request.data.get('email')
     username = request.data.get('username')
     if not email:
@@ -573,6 +671,10 @@ def check_email_available(request):
 @api_view(['GET'])
 @csrf_exempt
 def user_list(request):
+    """
+    获取所有用户列表（管理员权限）。
+    GET: 返回所有用户信息。
+    """
     username = request.GET.get('username') or request.session.get('username')
     try:
         user = UserProfile.objects.get(username=username)
@@ -595,6 +697,11 @@ def user_list(request):
 @api_view(['POST'])
 @csrf_exempt
 def delete_user(request):
+    """
+    删除用户接口（管理员权限）。
+    POST参数：username, user_id
+    返回：删除结果。
+    """
     username = request.data.get('username') or request.session.get('username')
     try:
         user = UserProfile.objects.get(username=username)
@@ -630,6 +737,11 @@ def delete_user(request):
 @api_view(['POST'])
 @csrf_exempt
 def update_permission(request):
+    """
+    修改用户权限接口（管理员权限）。
+    POST参数：username, user_id, permission
+    返回：修改结果。
+    """
     username = request.data.get('username') or request.session.get('username')
     try:
         user = UserProfile.objects.get(username=username)
@@ -651,6 +763,11 @@ def update_permission(request):
 
 @api_view(['GET'])
 def points_api(request):
+    """
+    轨迹点数据接口。
+    GET参数：start, end, car, limit
+    返回：轨迹点数据列表。
+    """
     """
     GET /api/points/?start=2013/9/12 0:00&end=2013/9/12 1:00&car=15053112970&limit=1000
     只读取前2万行，按参数筛选，返回前limit条。
@@ -704,6 +821,11 @@ def points_api(request):
     
 @api_view(['POST'])
 def face_verify_one_to_one(request):
+    """
+    1:1人脸比对接口。
+    POST参数：username, image(现场图片)
+    返回：比对分数及结果。
+    """
     """1:1人脸比对接口：当前用户主头像face_token vs 现场图片base64"""
     username = request.data.get('username') or request.session.get('username')
     if not username:
@@ -740,41 +862,30 @@ def face_verify_one_to_one(request):
         return Response({'msg': f'比对过程出错: {str(e)}'}, status=500)
     
 @api_view(['POST'])
-def face_verify_one_to_one(request):
-    """1:1人脸比对接口：当前用户主头像face_token vs 现场图片base64"""
-    username = request.data.get('username') or request.session.get('username')
+@parser_classes([MultiPartParser, FormParser])
+def upload_avatar(request):
+    """
+    用户头像上传接口。
+    POST参数：username, avatar(图片文件)
+    返回：上传结果及头像URL。
+    """
+    username = request.data.get('username')
     if not username:
-        return Response({'msg': '未登录，无法比对'}, status=401)
+        return Response({'msg': '用户名不能为空'}, status=400)
     try:
         user = UserProfile.objects.get(username=username)
+        avatar = request.FILES.get('avatar')
+        if not avatar:
+            return Response({'msg': '请上传头像文件'}, status=400)
+        user.avatar = avatar
+        user.save()
+        # 保证返回/media/avatars/xxx.jpg格式
+        avatar_url = user.avatar.url
+        if not avatar_url.startswith('/media/'):
+            avatar_url = '/media/' + user.avatar.name
+        return Response({'msg': '头像上传成功', 'avatar_url': avatar_url})
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=404)
-    # 获取主头像face_token
-    main_face = user.face_images.first()  # 取第一张人脸图片
-    if not main_face or not main_face.face_token:
-        return Response({'msg': '用户主头像未同步到百度云或未注册face_token'}, status=400)
-    if 'image' not in request.FILES:
-        return Response({'msg': '请上传现场图片'}, status=400)
-    img2 = request.FILES['image']
-    img2_base64 = base64.b64encode(img2.read()).decode()
-    # 用face_token和base64做比对
-    url = f"https://aip.baidubce.com/rest/2.0/face/v3/match?access_token={get_baidu_token()}"
-    headers = {'Content-Type': 'application/json'}
-    data = [
-        {"image": main_face.face_token, "image_type": "FACE_TOKEN", "face_type": "LIVE", "quality_control": "LOW", "liveness_control": "NORMAL"},
-        {"image": img2_base64, "image_type": "BASE64", "face_type": "LIVE", "quality_control": "LOW", "liveness_control": "NORMAL"}
-    ]
-    try:
-        resp = requests.post(url, data=json.dumps(data), headers=headers)
-        result = resp.json()
-        if result.get('error_code') == 0:
-            score = result['result']['score']
-            passed = score >= 80
-            return Response({'msg': '比对成功', 'score': score, 'passed': passed})
-        else:
-            return Response({'msg': f"比对失败: {result.get('error_msg')}", 'raw': result}, status=400)
-    except Exception as e:
-        return Response({'msg': f'比对过程出错: {str(e)}'}, status=500)
     
 def get_client_ip(request):
     """获取客户端真实IP"""
@@ -804,3 +915,24 @@ def create_log(request,user, level, action, details):
     #     serializer.save()
     #     # return Response(serializer.data, status=status.HTTP_201_CREATED)
     # # return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+def current_user_profile(request):
+    """
+    获取当前登录用户信息。
+    GET: 返回当前用户的详细信息（含头像URL）。
+    """
+    username = request.session.get('username') or request.GET.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+        data = {
+            'username': user.username,
+            'email': user.email,
+            'permission': user.permission,
+            'avatar_url': user.avatar.url if user.avatar else None
+        }
+        return Response(data)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)

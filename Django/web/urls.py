@@ -13,10 +13,12 @@ urlpatterns = [
     path('click_captcha/', views.click_captcha),
     path('click_captcha/verify/', views.click_captcha_verify),
     path('update_profile/', views.update_profile),
+    path('upload_avatar/', views.upload_avatar),
     path('check_email_available/', views.check_email_available),
     path('user_list/', views.user_list),
     path('update_permission/', views.update_permission),
     path('delete_user/', views.delete_user),
     path('points/', views.points_api),  # 新增车辆轨迹点查询接口
     path('face_verify_one_to_one/', views.face_verify_one_to_one),
+    path('user/profile/', views.current_user_profile),
 ]
