@@ -50,31 +50,28 @@ const router = createRouter({
 
 // 路由守卫
 router.beforeEach(async (to, from, next) => {
-  // 优先请求后端接口确认登录态
+  // 登录页和注册页不需要校验
+  if (to.path === '/login' || to.path === '/register') {
+    return next();
+  }
+  // 需要登录的页面
   if (to.meta.requiresAuth) {
     try {
-  
       const res = await axios.get('/api/user/profile/', { withCredentials: true });
-      console.log('profile接口返回', res.data);
       if (res.status === 200 && res.data && res.data.username) {
-        // 已登录，放行
-        next();
+        next(); // 已登录
       } else {
-        // 未登录，跳转到登录页
-        next('/');
+        next('/login'); // 未登录
       }
     } catch (e) {
-      // 接口报错也视为未登录
-      next('/');
+      // 401或其他错误都跳转到登录页
+      next('/login');
     }
-  } else if (to.path === '/' && (localStorage.getItem('name') || localStorage.getItem('email'))) {
-    // 已登录但访问登录页，重定向到首页
-    next('/home');
   } else if (to.name === 'UserManage' && localStorage.getItem('permission') != '2') {
     next('/');
   } else {
     next();
   }
-})
+});
 
 export default router
