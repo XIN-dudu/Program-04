@@ -17,6 +17,46 @@ import cv2
 import os
 
 model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
+
+def process_video_task(video_path, output_subdir):
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError("无法打开视频文件")
+        # 创建输出目录
+        output_dir = os.path.join(settings.MEDIA_ROOT, output_subdir)
+        os.makedirs(output_dir, exist_ok=True)
+        # 准备视频写入器
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        output_path = os.path.join(output_dir, 'processed_video.mp4')
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # 调整帧尺寸
+            frame = cv2.resize(frame, (width, height))
+            
+            # YOLO推理
+            results = model(frame)
+            annotated_frame = results[0].plot()
+            
+            # 写入处理后的帧
+            out.write(annotated_frame)
+        cap.release()
+        out.release()
+        # 构建访问URL
+        rel_url = os.path.join(settings.MEDIA_URL, output_subdir, 'processed_video.mp4')
+        return rel_url
+ 
+    except Exception as e:
+        # 记录详细日志
+        return {'status': 'error', 'message': '视频处理失败'}
+
 # Create your views here.
 
 # #获取路面图像信息
@@ -50,46 +90,62 @@ def upload_image(request):
     if not roadId:
         return JsonResponse({'status': 'error', 'message': '缺少道路编号'},status=400)
     
-    # allowed_types = ['video/webm', 'video/mp4']
-    # if file.content_type not in allowed_types:
-    #     return JsonResponse({'status': 'error', 'message': '不支持的视频格式'}, status=400)
-    
     if not file:
         return Response({'message': '没有提供文件'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    try:
-        # 创建子目录路径
-        subdir = 'road'
-        save_path = os.path.join(subdir, file.name)
-        # 保存文件
-        filename = default_storage.save(save_path, file)
-        print(filename)
-        local_path = default_storage.path(filename)
-        print(local_path)
-        results = model(
-            local_path,
-            save=True,
-            conf=0.5,
-            project=os.path.join(settings.MEDIA_ROOT, subdir),  # 指定根目录
-            name='results',    # 创建results子目录
-            exist_ok=True
-        )
-        # 获取处理后的图片路径
-        processed_dir = os.path.join(settings.MEDIA_ROOT, subdir, 'results')
-        processed_filename = os.path.basename(file.name)
-        processed_path = os.path.join(processed_dir, processed_filename)
-        print(processed_path)
-        # 验证文件是否存在
-        if not os.path.exists(processed_path):
-            return JsonResponse({'status': 'error', 'message': '处理后的图片未生成'}, status=500)
-        # 构建完整的URL
-        relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', processed_filename)
-        image_url = request.build_absolute_uri(relative_url)
-        print(image_url)
-        return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', 'image_url': image_url}, status=200)
-    
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    # 判断是否为视频文件
+    if file.content_type.startswith('video/'):
+        try:
+            # 视频保存
+            subdir = 'road'
+            save_path = os.path.join(subdir, file.name)
+            filename = default_storage.save(save_path, file)
+            local_path = default_storage.path(filename)
+
+            task = process_video_task(local_path, 'road/results')
+
+            # 构建视频访问URL（示例返回静态数据，实际可替换为分析结果）
+            relative_url = os.path.join(settings.MEDIA_URL, subdir, file.name)
+            video_url = request.build_absolute_uri(relative_url)
+            print(video_url)
+            return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "video", "media_url": task}, status=200)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+ 
+    # 判断是否为图片文件
+    if file.content_type.startswith('image/'):
+        try:
+            # 创建子目录路径
+            subdir = 'road'
+            save_path = os.path.join(subdir, file.name)
+            # 保存文件
+            filename = default_storage.save(save_path, file)
+            # print(filename)
+            local_path = default_storage.path(filename)
+            # print(local_path)
+            results = model(
+                local_path,
+                save=True,
+                conf=0.5,
+                project=os.path.join(settings.MEDIA_ROOT, subdir),  # 指定根目录
+                name='results',    # 创建results子目录
+                exist_ok=True
+            )
+            # 获取处理后的图片路径
+            processed_dir = os.path.join(settings.MEDIA_ROOT, subdir, 'results')
+            processed_filename = os.path.basename(file.name)
+            processed_path = os.path.join(processed_dir, processed_filename)
+            # print(processed_path)
+            # 验证文件是否存在
+            if not os.path.exists(processed_path):
+                return JsonResponse({'status': 'error', 'message': '处理后的图片未生成'}, status=500)
+            # 构建完整的URL
+            relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', processed_filename)
+            image_url = request.build_absolute_uri(relative_url)
+            print(image_url)
+            return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "image", 'media_url': image_url}, status=200)
+        
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
 @api_view(['GET'])
 def history_get(request):

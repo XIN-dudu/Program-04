@@ -48,8 +48,12 @@
           <p>{{ result.description }}</p>
           <p><strong>严重程度:</strong> {{ result.severity }}</p>
           <p>{{ result.position }}</p>
-          <div v-if="result.image_url" class="result-image">
-            <img :src="result.image_url" alt="检测结果示意图" />
+          <div v-if="result.media_url" class="result-media">
+            <video v-if="result.media_type === 'video'" controls autoplay playsinline muted style="width:100%">
+              <source :src="result.media_url" :type="result.media_type">
+              您的浏览器不支持视频播放
+            </video>
+            <img v-else-if="result.media_type === 'image'" :src="result.media_url" alt="检测结果示意图" />
           </div>
         </p>
       </div>
@@ -362,15 +366,18 @@ const detectIssues = async () => {
       const response = await axios.post('http://localhost:8000/road/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
-        }
+        },
+        withCredentials: true
       })
       result.value = {
         title: response.data.title,
         description: response.data.description,
         severity: response.data.severity,
         position: response.data.position,
-        image_url: response.data.image_url 
+        media_type: response.data.media_type,
+        media_url: response.data.media_url
       }
+      alert(result.value.media_url)
       //alert("success")
       console.log('上传成功:', result)
     } catch (err) {
@@ -510,5 +517,13 @@ button:disabled {
   display: block;
   max-height: 300px;
   object-fit: contain;
+}
+
+.result-media video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  margin-top: 12px;
 }
 </style>
