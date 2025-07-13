@@ -23,6 +23,27 @@ model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def upload_image(request):
+    """
+    上传路面图像并检测裂缝。
+
+    POST参数：
+        - file (file, 必填): 路面图片文件
+        - roadId (string, 必填): 道路编号
+    返回：
+        - title (string): 检测类型
+        - description (string): 检测描述
+        - severity (string): 严重程度
+        - position (string): 位置描述
+        - image_url (string): 检测结果图片URL
+    示例返回：
+        {
+            "title": "纵向裂纹",
+            "description": "检测到纵向裂缝约2.3米",
+            "severity": "中等",
+            "position": "翻斗花园123街区",
+            "image_url": "http://..."
+        }
+    """
     file = request.FILES.get('file')
     roadId = request.POST.get('roadId')
 
@@ -72,29 +93,57 @@ def upload_image(request):
 
 @api_view(['GET'])
 def history_get(request):
+    """
+    获取历史检测记录。
 
+    GET参数：无
+    返回：
+        - success (string): 操作结果
+    示例返回：
+        {"success": "ok"}
+    """
     return Response({'success'})
 
 @api_view(['GET'])
 def history_video(request):
+    """
+    获取历史检测视频记录。
 
+    GET参数：无
+    返回：
+        - success (string): 操作结果
+    示例返回：
+        {"success": "ok"}
+    """
     return Response({'success'})
 
 
 @api_view(['DELETE'])
 def history_delete(request):
+    """
+    删除历史检测记录。
 
+    DELETE参数：无
+    返回：
+        - success (string): 操作结果
+    示例返回：
+        {"success": "ok"}
+    """
     return Response({'success'})
 
 @api_view(['GET'])
 def heatmap_data(request):
     """
-    参数:
-        start_time: 形如 '08:00:00'（可选，默认00:00:00）
-        end_time:   形如 '08:15:00'（可选，默认23:59:59）
-        date:       形如 '0912'（可选，默认0912）
-    返回:
-        [{"lng": 经度, "lat": 纬度} ...]
+    获取热力图数据。
+
+    GET参数：
+        - start_time (string, 可选): 起始时间，格式如 '08:00:00'，默认00:00:00
+        - end_time (string, 可选): 结束时间，格式如 '08:15:00'，默认23:59:59
+        - date (string, 可选): 日期，格式如 '0912'，默认0912
+    返回：
+        - points (list): 热力图点列表，每个点含 lng(经度), lat(纬度)
+    示例返回：
+        {"points": [{"lng": 117.1, "lat": 36.6}, ...]}
     """
     date = request.GET.get('date', '0912')
     start_time = request.GET.get('start_time', '00:00:00')
