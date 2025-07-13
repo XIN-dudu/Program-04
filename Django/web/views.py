@@ -26,6 +26,9 @@ from django.http import JsonResponse
 import string
 import pandas as pd
 import numpy as np  # 在文件顶部加上
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from rest_framework import serializers
 
 # 简单内存验证码存储（生产建议用redis等）
 email_code_cache = {}
@@ -88,8 +91,29 @@ def add_face_to_baidu(image_path, user_id, user_info=None):
 def get_data(request):
     """
     获取所有用户数据或新增用户数据。
-    GET: 返回所有用户信息列表。
-    POST: 新增用户（测试用）。
+
+    GET:
+        - 无参数
+        - 返回：所有用户信息列表（UserSerializer）
+        - 示例返回：
+            [
+                {
+                    "id": 1,
+                    "username": "user1",
+                    "email": "user1@example.com",
+                    ...
+                },
+                ...
+            ]
+    POST:
+        - 参数：
+            - username (string, 必填): 用户名
+            - password (string, 必填): 密码
+            - email (string, 必填): 邮箱
+            - phone (string, 必填): 手机号
+            - permission (int, 可选): 权限（0-普通用户，1-维修工）
+            - face_images (file[], 必填): 多张人脸图片
+        - 返回：状态码 200，或校验失败信息
     """
     if request.method == 'GET':
         user = UserProfile.objects.all()
@@ -105,9 +129,16 @@ def get_data(request):
 def user_detail(request, id):
     """
     用户详情接口。
-    GET: 获取指定id用户信息。
-    PUT: 更新指定id用户信息。
-    DELETE: 删除指定id用户。
+
+    GET:
+        - 参数：id (int, 路径参数, 必填): 用户ID
+        - 返回：指定id用户信息（UserSerializer）
+    PUT:
+        - 参数：同UserSerializer
+        - 返回：更新后的用户信息
+    DELETE:
+        - 参数：id (int, 路径参数, 必填): 用户ID
+        - 返回：204，无内容
     """
     try:
         user = UserProfile.objects.get(id = id)
@@ -127,13 +158,47 @@ def user_detail(request, id):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 # 注册接口
+class RegisterSerializer(serializers.Serializer):
+    username = serializers.CharField(help_text="用户名")
+    password = serializers.CharField(help_text="密码")
+    email = serializers.EmailField(help_text="邮箱")
+    phone = serializers.CharField(help_text="手机号")
+    permission = serializers.IntegerField(required=False, help_text="权限（0-普通用户，1-维修工）")
+    face_images = serializers.ListField(child=serializers.ImageField(), help_text="多张人脸图片，至少3张")
+
+@swagger_auto_schema(
+    method='post',
+    manual_parameters=[
+        openapi.Parameter('username', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='用户名'),
+        openapi.Parameter('password', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='密码'),
+        openapi.Parameter('email', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='邮箱'),
+        openapi.Parameter('phone', openapi.IN_FORM, type=openapi.TYPE_STRING, required=True, description='手机号'),
+        openapi.Parameter('permission', openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False, description='权限（0-普通用户，1-维修工）'),
+        openapi.Parameter('face_images', openapi.IN_FORM, type=openapi.TYPE_FILE, required=True, description='多张人脸图片，至少3张', multiple=True),
+    ],
+    responses={201: openapi.Response(
+        description="注册成功",
+        examples={
+            "application/json": {"msg": "注册成功"}
+        }
+    )}
+)
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def register(request):
     """
     用户注册接口。
-    POST参数：username, password, email, phone, permission, face_images(多张人脸图片)
-    返回：注册结果信息。
+
+    POST参数：
+        - username (string, 必填): 用户名
+        - password (string, 必填): 密码
+        - email (string, 必填): 邮箱
+        - phone (string, 必填): 手机号
+        - permission (int, 可选): 权限（0-普通用户，1-维修工）
+        - face_images (file[], 必填): 多张人脸图片，至少3张
+    返回：
+        - msg (string): 注册结果信息
+        - 状态码 201 注册成功，400/500 失败
     """
     # 获取基本用户信息
     username = request.data.get('username')
@@ -209,12 +274,37 @@ def register(request):
     return Response({'msg': '注册成功'}, status=status.HTTP_201_CREATED)
 
 # 登录接口
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField(help_text="用户名")
+    password = serializers.CharField(help_text="密码")
+    captcha_id = serializers.CharField(required=False, help_text="验证码ID")
+    captcha_clicks = serializers.ListField(child=serializers.DictField(), required=False, help_text="验证码点击坐标")
+
+@swagger_auto_schema(
+    method='post',
+    request_body=LoginSerializer,
+    responses={200: openapi.Response(
+        description="登录结果",
+        examples={
+            "application/json": {"msg": "登录成功", "name": "user1", "permission": 0}
+        }
+    )}
+)
 @api_view(['POST'])
 def login(request):
     """
     用户登录接口。
-    POST参数：username, password, captcha_id, captcha_clicks
-    返回：登录结果、用户信息。
+
+    POST参数：
+        - username (string, 必填): 用户名
+        - password (string, 必填): 密码
+        - captcha_id (string, 可选): 验证码ID
+        - captcha_clicks (list, 可选): 验证码点击坐标
+    返回：
+        - msg (string): 登录结果
+        - name (string): 用户名
+        - permission (int): 权限
+        - reason (string, 可选): 错误原因
     """
     username = request.data.get('username') or request.data.get('name')
     password = request.data.get('password')
@@ -244,6 +334,7 @@ def login(request):
     try:
         user = UserProfile.objects.get(username=username)
         if user.password == password:
+            request.session['username'] = user.username  # 登录成功写入session
             create_log(request,user,'info', '用户登入成功', f'用户名: {username}')
             return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
         else:
@@ -254,12 +345,28 @@ def login(request):
         return Response({'msg': '用户不存在', 'reason': 'user_not_found'}, status=status.HTTP_400_BAD_REQUEST)
 
 # 发送邮箱验证码接口
+class EmailCodeSerializer(serializers.Serializer):
+    email = serializers.EmailField(help_text="邮箱")
+
+@swagger_auto_schema(
+    method='post',
+    request_body=EmailCodeSerializer,
+    responses={200: openapi.Response(
+        description="发送邮箱验证码",
+        examples={
+            "application/json": {"msg": "验证码已发送"}
+        }
+    )}
+)
 @api_view(['POST'])
 def send_email_code(request):
     """
     发送邮箱验证码接口。
-    POST参数：email
-    返回：发送结果。
+
+    POST参数：
+        - email (string, 必填): 邮箱
+    返回：
+        - msg (string): 发送结果
     """
     email = request.data.get('email')
     if not email:
@@ -291,12 +398,32 @@ def send_email_code(request):
     return Response({'msg': '验证码已发送'})
 
 # 邮箱验证码登录接口
+class EmailLoginSerializer(serializers.Serializer):
+    email = serializers.EmailField(help_text="邮箱")
+    code = serializers.CharField(help_text="邮箱验证码")
+
+@swagger_auto_schema(
+    method='post',
+    request_body=EmailLoginSerializer,
+    responses={200: openapi.Response(
+        description="邮箱验证码登录",
+        examples={
+            "application/json": {"msg": "登录成功", "name": "user1", "permission": 0}
+        }
+    )}
+)
 @api_view(['POST'])
 def email_login(request):
     """
     邮箱验证码登录接口。
-    POST参数：email, email_code
-    返回：登录结果、用户信息。
+
+    POST参数：
+        - email (string, 必填): 邮箱
+        - code (string, 必填): 邮箱验证码
+    返回：
+        - msg (string): 登录结果
+        - name (string): 用户名
+        - permission (int): 权限
     """
     email = request.data.get('email')
     code = request.data.get('code')
@@ -310,6 +437,7 @@ def email_login(request):
     try:
         user = UserProfile.objects.get(email=email)
         # 登录成功后可做session/token等处理
+        request.session['username'] = user.username  # 邮箱登录成功写入session
         return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
@@ -320,8 +448,13 @@ def email_login(request):
 def face_recognition(request):
     """
     人脸识别登录接口。
-    POST参数：username, image(现场图片)
-    返回：识别结果。
+
+    POST参数：
+        - username (string, 必填): 用户名
+        - image (file, 必填): 现场图片
+    返回：
+        - msg (string): 识别结果
+        - user (object): 用户信息（含id, username, email, score）
     """
     """人脸识别接口，通过上传图片识别用户"""
     if 'image' not in request.FILES:
@@ -400,8 +533,15 @@ def face_recognition(request):
 def liveness_detection(request):
     """
     活体检测接口。
-    POST参数：username, image(现场图片)
-    返回：活体检测结果。
+
+    POST参数：
+        - username (string, 必填): 用户名
+        - image (file, 必填): 现场图片
+    返回：
+        - msg (string): 检测结果
+        - user (object): 用户信息
+        - score (float): 置信分数
+        - liveness (float/bool): 活体检测分数/结果
     """
     """活体检测+1对N识别接口，接收图片，调用百度V3接口"""
     if 'image' not in request.FILES:
@@ -458,8 +598,14 @@ def liveness_detection(request):
 def liveness_check(request):
     """
     活体检测二次接口。
-    POST参数：username, image(现场图片)
-    返回：活体检测结果。
+
+    POST参数：
+        - username (string, 必填): 用户名
+        - video (file, 必填): 现场视频
+    返回：
+        - liveness (bool): 是否通过
+        - msg (string): 检测结果说明
+        - raw (object): 原始返回内容
     """
     """活体检测接口，接收视频，调用百度H5 API"""
     if 'video' not in request.FILES:
@@ -603,8 +749,15 @@ def click_captcha_verify(request):
 def update_profile(request):
     """
     用户信息修改接口。
-    POST参数：username, new_username(可选), email(可选), password(可选), email_code(可选)
-    返回：修改结果。
+
+    POST参数：
+        - username (string, 必填): 用户名
+        - new_username (string, 可选): 新用户名
+        - email (string, 可选): 新邮箱
+        - password (string, 可选): 新密码
+        - email_code (string, 可选): 邮箱验证码
+    返回：
+        - msg (string): 修改结果
     """
     username = request.data.get('username')
     new_email = request.data.get('email')
@@ -651,12 +804,31 @@ def update_profile(request):
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=404)
     
+class CheckEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField(help_text="邮箱")
+    username = serializers.CharField(required=False, help_text="用户名（可选）")
+
+@swagger_auto_schema(
+    method='post',
+    request_body=CheckEmailSerializer,
+    responses={200: openapi.Response(
+        description="邮箱可用性",
+        examples={
+            "application/json": {"available": True, "msg": "邮箱可用"}
+        }
+    )}
+)
 @api_view(['POST'])
 def check_email_available(request):
     """
     检查邮箱是否可用接口。
-    POST参数：email, username(可选)
-    返回：邮箱可用性。
+
+    POST参数：
+        - email (string, 必填): 邮箱
+        - username (string, 可选): 用户名
+    返回：
+        - available (bool): 邮箱是否可用
+        - msg (string): 结果说明
     """
     """邮箱有效性校验"""
     email = request.data.get('email')
@@ -673,7 +845,11 @@ def check_email_available(request):
 def user_list(request):
     """
     获取所有用户列表（管理员权限）。
-    GET: 返回所有用户信息。
+
+    GET参数：
+        - username (string, 可选): 用户名（用于权限校验）
+    返回：
+        - users (list): 用户信息列表（含id, username, email, permission）
     """
     username = request.GET.get('username') or request.session.get('username')
     try:
@@ -699,8 +875,12 @@ def user_list(request):
 def delete_user(request):
     """
     删除用户接口（管理员权限）。
-    POST参数：username, user_id
-    返回：删除结果。
+
+    POST参数：
+        - username (string, 必填): 管理员用户名
+        - user_id (int, 必填): 目标用户ID
+    返回：
+        - msg (string): 删除结果
     """
     username = request.data.get('username') or request.session.get('username')
     try:
@@ -739,8 +919,13 @@ def delete_user(request):
 def update_permission(request):
     """
     修改用户权限接口（管理员权限）。
-    POST参数：username, user_id, permission
-    返回：修改结果。
+
+    POST参数：
+        - username (string, 必填): 管理员用户名
+        - user_id (int, 必填): 目标用户ID
+        - permission (int, 必填): 新权限值
+    返回：
+        - msg (string): 修改结果
     """
     username = request.data.get('username') or request.session.get('username')
     try:
@@ -765,8 +950,14 @@ def update_permission(request):
 def points_api(request):
     """
     轨迹点数据接口。
-    GET参数：start, end, car, limit
-    返回：轨迹点数据列表。
+
+    GET参数：
+        - start (string, 可选): 起始时间
+        - end (string, 可选): 结束时间
+        - car (string, 可选): 车辆编号
+        - limit (int, 可选): 返回条数
+    返回：
+        - 轨迹点数据列表（含lat, lon, time, car, head, tflag, status）
     """
     """
     GET /api/points/?start=2013/9/12 0:00&end=2013/9/12 1:00&car=15053112970&limit=1000
@@ -823,8 +1014,13 @@ def points_api(request):
 def face_verify_one_to_one(request):
     """
     1:1人脸比对接口。
-    POST参数：username, image(现场图片)
-    返回：比对分数及结果。
+
+    POST参数：
+        - username (string, 必填): 用户名
+        - image (file, 必填): 现场图片
+    返回：
+        - msg (string): 比对结果
+        - score (float): 相似度分数
     """
     """1:1人脸比对接口：当前用户主头像face_token vs 现场图片base64"""
     username = request.data.get('username') or request.session.get('username')
@@ -866,8 +1062,13 @@ def face_verify_one_to_one(request):
 def upload_avatar(request):
     """
     用户头像上传接口。
-    POST参数：username, avatar(图片文件)
-    返回：上传结果及头像URL。
+
+    POST参数：
+        - username (string, 必填): 用户名
+        - avatar (file, 必填): 头像图片
+    返回：
+        - msg (string): 上传结果
+        - avatar_url (string): 头像URL
     """
     username = request.data.get('username')
     if not username:
@@ -877,9 +1078,13 @@ def upload_avatar(request):
         avatar = request.FILES.get('avatar')
         if not avatar:
             return Response({'msg': '请上传头像文件'}, status=400)
-        user.face_image = avatar
+        user.avatar = avatar
         user.save()
-        return Response({'msg': '头像上传成功', 'avatar_url': user.face_image.url})
+        # 保证返回/media/avatars/xxx.jpg格式
+        avatar_url = user.avatar.url
+        if not avatar_url.startswith('/media/'):
+            avatar_url = '/media/' + user.avatar.name
+        return Response({'msg': '头像上传成功', 'avatar_url': avatar_url})
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=404)
     
@@ -960,3 +1165,31 @@ def log_list(request):
         'page_size': paginator.page.paginator.per_page,
         'total': paginator.page.paginator.count
     })
+
+@api_view(['GET'])
+def current_user_profile(request):
+    """
+    获取当前登录用户信息。
+
+    GET参数：
+        - username (string, 可选): 用户名（用于session或GET）
+    返回：
+        - username (string): 用户名
+        - email (string): 邮箱
+        - permission (int): 权限
+        - avatar_url (string): 头像URL
+    """
+    username = request.session.get('username') or request.GET.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+        data = {
+            'username': user.username,
+            'email': user.email,
+            'permission': user.permission,
+            'avatar_url': user.avatar.url if user.avatar else None
+        }
+        return Response(data)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)

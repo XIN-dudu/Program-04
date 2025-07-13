@@ -2,6 +2,13 @@
 <!-- src/views/Login.vue -->
 <template>
   <div class="login-bg">
+    <!-- 新增：入侵警告弹窗 -->
+    <div v-if="showAlert" class="big-alert-overlay">
+      <div class="big-alert-box">
+        <h1>警告！检测到非法入侵</h1>
+        <button @click="closeAlert">关闭</button>
+      </div>
+    </div>
     <div class="auth-container">
       <div class="auth-box">
         <!-- 登录方式切换 -->
@@ -94,6 +101,15 @@ const captchaTargets = ref([])
 const captchaId = ref('')
 const captchaClicks = ref([])
 
+const showAlert = ref(false);
+function closeAlert() {
+  showAlert.value = false;
+  localStorage.removeItem('intrusion_alert');
+}
+onMounted(() => {
+  fetchCaptcha()
+})
+
 const fetchCaptcha = async () => {
   const res = await axios.get('/api/click_captcha/', { withCredentials: true })
   captchaImg.value = res.data.image
@@ -111,9 +127,6 @@ const handleCaptchaClick = (e) => {
   const y = e.clientY - rect.top
   captchaClicks.value.push({x: Math.round(x), y: Math.round(y)})
 }
-onMounted(() => {
-  fetchCaptcha()
-})
 
 const handleLogin = async () => {
   errorMessage.value = ''
@@ -143,14 +156,16 @@ const handleLogin = async () => {
     })
     if (response.status === 200) {
       alert(response.data.msg || '登录成功')
-      // 登录成功后
+      // 登录成功后写入localStorage并派发事件
       if (response.data.name) {
+        localStorage.setItem('name', response.data.name);
         window.dispatchEvent(new CustomEvent('updateUserName', { detail: response.data.name }));
-        window.location.reload();
       }
       if (response.data.permission !== undefined) {
+        localStorage.setItem('permission', response.data.permission);
         window.dispatchEvent(new CustomEvent('updateUserPermission', { detail: response.data.permission }));
       }
+      // 跳转首页，无需reload
       router.push('/home')
     }
   } catch (error) {
@@ -225,15 +240,15 @@ const handleEmailLogin = async () => {
     }, { withCredentials: true })
     if (res.status === 200) {
       alert(res.data.msg || '登录成功')
-      localStorage.setItem('email', emailForm.value.email)
-      // 登录成功后
       if (res.data.name) {
+        localStorage.setItem('name', res.data.name);
         window.dispatchEvent(new CustomEvent('updateUserName', { detail: res.data.name }));
-        window.location.reload();
       }
       if (res.data.permission !== undefined) {
+        localStorage.setItem('permission', res.data.permission);
         window.dispatchEvent(new CustomEvent('updateUserPermission', { detail: res.data.permission }));
       }
+      localStorage.setItem('email', emailForm.value.email)
       router.push('/home')
     }
   } catch (err) {
@@ -333,5 +348,36 @@ const handleEmailLogin = async () => {
   display: block;
   text-align: center;
   margin-top: 18px;
+}
+.big-alert-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,0,0,0.7);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.big-alert-box {
+  background: #fff;
+  border: 6px solid #ff0000;
+  border-radius: 24px;
+  padding: 80px 120px;
+  text-align: center;
+  box-shadow: 0 0 60px #ff0000;
+}
+.big-alert-box h1 {
+  color: #ff0000;
+  font-size: 3.5em;
+  margin-bottom: 40px;
+}
+.big-alert-box button {
+  font-size: 2em;
+  padding: 16px 60px;
+  border: none;
+  border-radius: 12px;
+  background: #ff0000;
+  color: #fff;
+  cursor: pointer;
 }
   </style>

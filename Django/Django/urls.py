@@ -42,6 +42,7 @@ urlpatterns = [
     path('redoc/', schema_view.with_ui('redoc',  cache_timeout=0)),
 ]
 
+
 # 在开发环境中，为媒体文件提供服务
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

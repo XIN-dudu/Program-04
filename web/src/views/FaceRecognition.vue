@@ -1,6 +1,13 @@
 <!-- 人脸识别页面 -->
 <template>
   <div class="face-recognition-container">
+    <!-- 新增：巨型警告弹窗 -->
+    <div v-if="showBigAlert" class="big-alert-overlay">
+      <div class="big-alert-box">
+        <h1>警告！检测到非法入侵</h1>
+        <button @click="handleAlertClose">关闭</button>
+      </div>
+    </div>
     <h1>人脸识别</h1>
     <div class="card">
       <!-- 只保留摄像头拍照区域 -->
@@ -46,10 +53,14 @@ export default {
       capturedImage: null,
       recognitionResult: null,
       recognitionStatus: null,
-      loading: false
+      loading: false,
+      showBigAlert: false // 新增弹窗控制变量
     };
   },
   mounted() {
+    if (localStorage.getItem('intrusion_alert') === '1') {
+      this.showBigAlert = true;
+    }
     this.startCamera();
   },
   beforeUnmount() {
@@ -109,13 +120,22 @@ export default {
         } else {
           this.recognitionResult = { msg: '认证未通过/告警', score: data.score };
           this.recognitionStatus = 'error';
+          this.showBigAlert = true; // 只在主动识别失败时弹窗
+          localStorage.setItem('intrusion_alert', '1'); // 新增：写入入侵标记
         }
       } catch (err) {
         this.recognitionResult = { msg: err.response?.data?.msg || '比对失败', score: 0 };
         this.recognitionStatus = 'error';
+        this.showBigAlert = true; // 只在主动识别异常时弹窗
+        localStorage.setItem('intrusion_alert', '1'); // 新增：写入入侵标记
       } finally {
         this.loading = false;
       }
+    },
+    handleAlertClose() {
+      this.showBigAlert = false;
+      localStorage.removeItem('intrusion_alert');
+      this.$router.push('/login');
     }
   }
 };
@@ -240,5 +260,37 @@ h1 {
 .success-result h3,
 .error-result h3 {
   margin-bottom: 10px;
+}
+
+.big-alert-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,0,0,0.7);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.big-alert-box {
+  background: #fff;
+  border: 6px solid #ff0000;
+  border-radius: 24px;
+  padding: 80px 120px;
+  text-align: center;
+  box-shadow: 0 0 60px #ff0000;
+}
+.big-alert-box h1 {
+  color: #ff0000;
+  font-size: 3.5em;
+  margin-bottom: 40px;
+}
+.big-alert-box button {
+  font-size: 2em;
+  padding: 16px 60px;
+  border: none;
+  border-radius: 12px;
+  background: #ff0000;
+  color: #fff;
+  cursor: pointer;
 }
 </style> 
