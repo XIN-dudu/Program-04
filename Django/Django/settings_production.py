@@ -61,7 +61,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://www.971646.xyz",
     "https://www.971646.xyz",
 ]
-12
+
 CSRF_TRUSTED_ORIGINS = [
     "http://971646.xyz",
     "https://971646.xyz",

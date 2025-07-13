@@ -11,6 +11,7 @@
       <div class="profile-info-card-light">
         <div class="info-row-light"><span class="info-label-light">用户名</span><span class="info-value-center">{{ user.username }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
         <div class="info-row-light"><span class="info-label-light">电子邮箱</span><span class="info-value-center">{{ user.email }}</span><button class="edit-btn-light" @click="showEditEmail = true">编辑</button></div>
+        <div class="info-row-light"><span class="info-label-light">手机号</span><span class="info-value-center">{{ user.phone || '未填写' }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
         <div class="info-row-light permission-row-fix"><span class="info-label-light">权限</span><span class="info-value-center permission-value">{{ permissionText }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
         <div class="info-row-light no-border info-row-password-btn"><button class="edit-btn-light left-btn" @click="showEditAll = true">修改密码</button></div>
       </div>
