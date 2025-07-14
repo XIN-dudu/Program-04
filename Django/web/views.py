@@ -1129,8 +1129,8 @@ def log_list(request):
     start_date = request.query_params.get('start_date')
     end_date = request.query_params.get('end_date')
 
-    # 初始化查询集
-    logs = SystemLog.objects.all().select_related('user')
+    # 初始化查询集，按时间降序排列
+    logs = SystemLog.objects.all().select_related('user').order_by('-timestamp')
 
     # 根据参数过滤
     if level:
