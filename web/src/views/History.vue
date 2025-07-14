@@ -8,68 +8,104 @@
       <button @click="fetchHistory">搜索</button>
     </div>
 
-    <!-- 结果列表 -->
+    <!-- 结果展示 -->
     <div class="result-list">
       <div v-if="records.length === 0" class="no-data">暂无历史记录</div>
-      <div v-for="(record, index) in records" :key="index" class="record-card">
-        <h3>道路编号：{{ record.roadId }}</h3>
-        <p>检测时间：{{ record.time }}</p>
-        <p>问题描述：{{ record.description }}</p>
-        <video v-if="record.videoUrl" :src="record.videoUrl" controls class="video"></video>
+      <div
+        v-for="(record, index) in records"
+        :key="index"
+        class="record-card"
+      >
+        <h3>道路编号：{{ record.road_id }}</h3>
+        <p><strong>检测时间：</strong>{{ record.detection_date }}</p>
+        <p><strong>病害类型：</strong>{{ record.disease_type }}</p>
+        <p><strong>严重程度：</strong>{{ record.severity }}</p>
+
+        <!-- 媒体展示：自动区分图片和视频 -->
+        <template v-if="record.url">
+          <img
+            v-if="isImageUrl(record.url)"
+            :src="getFullUrl(record.url)"
+            alt="检测图像"
+            class="media"
+          />
+          <video
+            v-else-if="isVideoUrl(record.url)"
+            :src="getFullUrl(record.url)"
+            controls
+            class="media"
+          />
+          <p v-else class="no-media">⚠️ 不支持的媒体类型</p>
+        </template>
+        <p v-else class="no-media">无图像信息</p>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
-// import axios from 'axios' // 实际开发中使用 axios 请求后端
+import { ref, onMounted } from 'vue'
+import axios from 'axios'
 
-// 搜索条件
+// 后端地址（根据实际部署修改）
+const backendBaseURL = 'http://localhost:8000'
+
 const search = ref({
   roadId: '',
   startTime: '',
   endTime: '',
-});
+})
 
-// 历史记录列表
-const records = ref([]);
+const records = ref([])
 
-// 模拟数据库数据
-const mockDB = [
-  {
-    roadId: 'A001',
-    time: '2025-07-01',
-    description: '检测到轻微裂缝',
-    videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4',
-  },
-  {
-    roadId: 'A002',
-    time: '2025-07-05',
-    description: '检测到坑洞',
-    videoUrl: 'https://www.w3schools.com/html/movie.mp4',
-  },
-];
+// 转换URL（兼容反斜杠）
+const getFullUrl = (url) => {
+  if (!url) return ''
+  const fixedPath = url.replace(/\\/g, '/')
+  return fixedPath.startsWith('http') ? fixedPath : backendBaseURL + fixedPath
+}
 
-// 模拟数据库访问
+// 判断是否为图片类型
+const isImageUrl = (url) => {
+  return /\.(jpg|jpeg|png|gif|bmp)$/i.test(url)
+}
+
+// 判断是否为视频类型
+const isVideoUrl = (url) => {
+  return /\.(mp4|webm|ogg|avi|mov)$/i.test(url)
+}
+
 const fetchHistory = async () => {
-  // 模拟延迟
-  await new Promise(resolve => setTimeout(resolve, 500));
+  try {
+    const params = {}
+    if (search.value.roadId) params.roadId = search.value.roadId
+    if (search.value.startTime) params.startTime = search.value.startTime
+    if (search.value.endTime) params.endTime = search.value.endTime
 
-  const { roadId, startTime, endTime } = search.value;
+    const res = await axios.get(`${backendBaseURL}/history/list`, { params })
+    let allRecords = res.data
 
-  // 实际开发应向后端发送搜索条件
-  // const res = await axios.get('/api/road/history', { params: { roadId, startTime, endTime } })
-  // records.value = res.data;
+    // 前端过滤：精准匹配
+    if (search.value.roadId) {
+      allRecords = allRecords.filter(r => String(r.road_id) === String(search.value.roadId))
+    }
+    if (search.value.startTime) {
+      allRecords = allRecords.filter(r => r.detection_date >= search.value.startTime)
+    }
+    if (search.value.endTime) {
+      allRecords = allRecords.filter(r => r.detection_date <= search.value.endTime)
+    }
 
-  records.value = mockDB.filter(record => {
-    const matchesRoad = !roadId || record.roadId.includes(roadId);
-    const matchesTime =
-      (!startTime || record.time >= startTime) &&
-      (!endTime || record.time <= endTime);
-    return matchesRoad && matchesTime;
-  });
-};
+    records.value = allRecords
+  } catch (err) {
+    console.error('获取数据失败：', err)
+    records.value = []
+  }
+}
+
+onMounted(() => {
+  fetchHistory()
+})
 </script>
 
 <style scoped>
@@ -119,14 +155,22 @@ button:hover {
   border-radius: 6px;
 }
 
-.video {
+.media {
   width: 100%;
   max-width: 600px;
   margin-top: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
 }
 
 .no-data {
   color: #888;
   font-style: italic;
+}
+
+.no-media {
+  color: #555;
+  font-style: italic;
+  margin-top: 10px;
 }
 </style>
