@@ -1101,25 +1101,39 @@ class StandardResultsSetPagination(PageNumberPagination):
    
 @api_view(['GET'])
 def log_list(request):
-    # 获取查询参数
+    """
+    日志列表接口。
+
+    GET参数：
+        - level (string, 可选): 日志级别
+        - start_date (string, 可选): 开始日期
+        - end_date (string, 可选): 结束日期
+        - username (string, 可选): 用户名（用于权限校验）
+    返回：
+        - results (list): 日志信息列表（含id, level, action, details, ip_address, timestamp）
+        - current_page (int): 当前页码
+        - page_size (int): 每页条数
+        - total (int): 总记录数
+    """
     level = request.query_params.get('level')
     start_date = request.query_params.get('start_date')
     end_date = request.query_params.get('end_date')
+    username = request.query_params.get('username')
 
-    # 初始化查询集
-    logs = SystemLog.objects.all().select_related('user')
+    # 初始化查询集，按时间降序排列
+    logs = SystemLog.objects.all().select_related('user').order_by('-timestamp')
 
     # 根据参数过滤
     if level:
         logs = logs.filter(level=level)
-
+    if username:
+        logs = logs.filter(user__username=username)
     if start_date:
         try:
             start = timezone.make_aware(datetime.datetime.strptime(start_date, "%Y-%m-%d"))
             logs = logs.filter(timestamp__gte=start)
         except ValueError:
             return Response({"error": "无效的开始日期格式，请使用 YYYY-MM-DD"}, status=400)
-
     if end_date:
         try:
             end = timezone.make_aware(datetime.datetime.strptime(end_date, "%Y-%m-%d"))
