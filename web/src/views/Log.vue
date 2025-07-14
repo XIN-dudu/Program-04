@@ -3,6 +3,10 @@
     <!-- 筛选表单 -->
     <form class="filter-form" @submit.prevent="fetchLogs(1)">
       <label>
+        用户名：
+        <input type="text" v-model="filters.username" placeholder="输入用户名" style="width: 120px;" />
+      </label>
+      <label>
         日志级别：
         <select v-model="filters.level">
           <option value="">全部</option>
@@ -87,6 +91,7 @@ const pagination = ref({
   total: 0
 });
 const filters = ref({
+  username: '',
   level: '',
   start_date: '',
   end_date: ''
@@ -103,6 +108,7 @@ const fetchLogs = async (page = 1) => {
     const params = {
       page,
       page_size: pagination.value.page_size,
+      username: filters.value.username,
       level: filters.value.level,
       start_date: filters.value.start_date,
       end_date: filters.value.end_date,
@@ -125,6 +131,7 @@ const fetchLogs = async (page = 1) => {
 };
 
 const resetFilters = () => {
+  filters.value.username = '';
   filters.value.level = '';
   filters.value.start_date = '';
   filters.value.end_date = '';
