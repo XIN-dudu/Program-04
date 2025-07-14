@@ -111,7 +111,11 @@ export default {
       this.showCamera = true;
       navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
         this.videoStream = stream;
-        this.$refs.video.srcObject = stream;
+        this.$nextTick(() => {
+          if (this.$refs.video) {
+            this.$refs.video.srcObject = stream;
+          }
+        });
       });
     },
     closeCamera() {

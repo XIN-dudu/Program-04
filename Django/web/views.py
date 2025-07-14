@@ -1176,6 +1176,7 @@ def current_user_profile(request):
     返回：
         - username (string): 用户名
         - email (string): 邮箱
+        - phone (string): 手机号
         - permission (int): 权限
         - avatar_url (string): 头像URL
     """
@@ -1187,6 +1188,7 @@ def current_user_profile(request):
         data = {
             'username': user.username,
             'email': user.email,
+            'phone': user.phone,
             'permission': user.permission,
             'avatar_url': user.avatar.url if user.avatar else None
         }
