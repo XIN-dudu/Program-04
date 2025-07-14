@@ -96,6 +96,8 @@ class SystemLog(models.Model):
     action = models.CharField(max_length=100)  # 描述用户操作
     timestamp = models.DateTimeField(auto_now_add=True)  # 操作时间
     details = models.TextField(blank=True, null=True)  # 其他操作细节 
+    alert_event = models.ForeignKey('AlertEvent', on_delete=models.SET_NULL, null=True, blank=True)
+
     def __str__(self):
         return f"{self.user.username} - {self.action} at {self.timestamp}"
 
@@ -111,3 +113,13 @@ class TrajectoryPoint(models.Model):
 
     def __str__(self):
         return f"{self.car} @ {self.time} ({self.lat}, {self.lon})"
+
+class AlertEvent(models.Model):
+    alert_time = models.DateTimeField()
+    alert_type = models.CharField(max_length=50)
+    status = models.CharField(max_length=20)
+    related_data = models.JSONField()
+    user = models.ForeignKey('UserProfile', on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        db_table = 'web_alertevent'
