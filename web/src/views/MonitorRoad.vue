@@ -139,8 +139,13 @@ const startRecording = () => {
 
   recordedChunks.value = []
   try {
-    mediaRecorder.value = new MediaRecorder(mediaStream.value, { mimeType: 'video/webm; codecs=vp9' })
+    // 优先尝试MP4格式（需要浏览器支持）
+    mediaRecorder.value = new MediaRecorder(mediaStream.value, { 
+      mimeType: 'video/mp4' 
+    })
   } catch (e) {
+    // 降级方案：使用webm格式
+    console.warn('MP4格式不支持，降级使用webm')
     mediaRecorder.value = new MediaRecorder(mediaStream.value)
   }
 
@@ -176,10 +181,15 @@ const stopRecording = () => {
     recording.value = false
 
     mediaRecorder.value.onstop = () => {
-      const blob = new Blob(recordedChunks.value, { type: 'video/webm' })
-      const file = new File([blob], `recording_${Date.now()}.webm`, {
-        type: 'video/webm'
-      });
+      
+      const mimeType = mediaRecorder.value.mimeType.includes('mp4') ? 'video/mp4' : 'video/webm'
+    
+      const blob = new Blob(recordedChunks.value, { type: mimeType })
+      const fileExtension = mimeType.split('/')[1]
+      
+      const file = new File([blob], `recording_${Date.now()}.${fileExtension}`, {
+        type: mimeType
+      })
       selectedFile.value = file
       const url = URL.createObjectURL(blob)
       recordedVideoUrl.value = url

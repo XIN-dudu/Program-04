@@ -1,3 +1,4 @@
+import random
 import time
 from django.conf import settings
 from django.http import JsonResponse
@@ -13,6 +14,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 from ultralytics import YOLO
 import cv2
+
+from .serializers import RoadRecordSerializer
+
+from .models import roadRecord
 
 
 model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
@@ -91,6 +96,18 @@ def upload_image(request):
     
     if not file:
         return Response({'message': '没有提供文件'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    record = roadRecord()
+    record.road_id = roadId
+    record.detection_time = datetime.now()
+    record.length = random.uniform(1, 10)
+    record.area = random.uniform(1, 100)
+    record.path = file.name
+
+    record.disease_type = 1
+    record.severity = 1
+    record.save()
+
     # 视频保存
     subdir = 'road'
     save_path = os.path.join(subdir, file.name)
@@ -148,7 +165,10 @@ def history_get(request):
     示例返回：
         {"success": "ok"}
     """
-    return Response({'success'})
+    records = roadRecord.objects.all()
+    serializer = RoadRecordSerializer(records, many=True)
+    print(serializer.data)
+    return Response(serializer.data)
 
 @api_view(['GET'])
 def history_video(request):
