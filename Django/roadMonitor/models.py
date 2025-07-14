@@ -46,3 +46,4 @@ class roadRecord(models.Model):
         (3, 'HIGH'),    
     ]
     severity = models.IntegerField(choices=SEVERITY_CHOICES, null=False, blank=False)
+    path = models.CharField(max_length=255, null=False, blank=False)

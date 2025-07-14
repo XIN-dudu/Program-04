@@ -4,15 +4,8 @@
     <div class="left-panel">
       <!-- 视频或图片显示 -->
       <div class="media-display">
-        <video
-          ref="videoElement"
-          controls
-          autoplay
-          playsinline
-          muted
-          v-if="isVideo"
-          style="max-width: 100%; max-height: 100%;"
-        ></video>
+        <video ref="videoElement" controls autoplay playsinline muted v-if="isVideo"
+          style="max-width: 100%; max-height: 100%;"></video>
         <img v-else-if="isImage" :src="mediaPreviewUrl" alt="上传图片预览" />
         <div v-else class="media-placeholder">
           <p v-if="selectedFile">{{ selectedFile.name }}</p>
@@ -43,19 +36,20 @@
       <div class="result-header">检测结果：</div>
       <div class="result-list">
         <p v-if="!result">具体展示结果</p>
-        <p v-else class="result-card">
+        <div v-else class="result-card">
           <h3>{{ result.title }}</h3>
           <p>{{ result.description }}</p>
           <p><strong>严重程度:</strong> {{ result.severity }}</p>
           <p>{{ result.position }}</p>
+
           <div v-if="result.media_url" class="result-media">
             <video v-if="result.media_type === 'video'" controls autoplay playsinline muted style="width:100%">
-              <source :src="result.media_url" :type="result.media_type">
+              <source :src="result.media_url" :type="'video/mp4'" />
               您的浏览器不支持视频播放
             </video>
             <img v-else-if="result.media_type === 'image'" :src="result.media_url" alt="检测结果示意图" />
           </div>
-        </p>
+        </div>
       </div>
     </div>
   </div>
@@ -265,24 +259,24 @@ const stopCamera = async () => {
     mediaPreviewUrl.value = ''
   }
 
-  if (selectedFile.value) {
-    const formData = new FormData()
-    formData.append('file', selectedFile.value)
-    formData.append('roadId', roadId.value)
+  // if (selectedFile.value) {
+  //   const formData = new FormData()
+  //   formData.append('file', selectedFile.value)
+  //   formData.append('roadId', roadId.value)
 
-    try {
-      await axios.post('http://localhost:8000/road/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      })
-      const result = await res.json()
-      console.log('上传成功:', result)
-      alert(result)
-    } catch (err) {
-      console.error('上传失败:', err)
-    }
-  }
+  //   try {
+  //     await axios.post('http://localhost:8000/road/upload', formData, {
+  //       headers: {
+  //         'Content-Type': 'multipart/form-data'
+  //       }
+  //     })
+  //     const result = await res.json()
+  //     console.log('上传成功:', result)
+  //     alert(result)
+  //   } catch (err) {
+  //     console.error('上传失败:', err)
+  //   }
+  // }
   roadId.value = ''
   videoActive.value = false
   selectedFile.value = null

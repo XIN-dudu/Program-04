@@ -11,14 +11,13 @@ import os
 from django.conf import settings
 import pandas as pd
 from datetime import datetime, timedelta
-from django.conf import settings
 from ultralytics import YOLO
 import cv2
-import os
+
 
 model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
 
-def process_video_task(video_path, output_subdir):
+def process_video_task(video_path, output_subdir, name):
     try:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -30,7 +29,7 @@ def process_video_task(video_path, output_subdir):
         fps = cap.get(cv2.CAP_PROP_FPS)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        output_path = os.path.join(output_dir, 'processed_video.mp4')
+        output_path = os.path.join(output_dir, name)
         fourcc = cv2.VideoWriter_fourcc(*'avc1')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         while cap.isOpened():
@@ -50,7 +49,7 @@ def process_video_task(video_path, output_subdir):
         cap.release()
         out.release()
         # 构建访问URL
-        rel_url = os.path.join(settings.MEDIA_URL, output_subdir, 'processed_video.mp4')
+        rel_url = os.path.join(settings.MEDIA_URL, output_subdir, name)
         return rel_url
  
     except Exception as e:
@@ -92,36 +91,25 @@ def upload_image(request):
     
     if not file:
         return Response({'message': '没有提供文件'}, status=status.HTTP_400_BAD_REQUEST)
+    # 视频保存
+    subdir = 'road'
+    save_path = os.path.join(subdir, file.name)
+    filename = default_storage.save(save_path, file)
+    local_path = default_storage.path(filename)
     # 判断是否为视频文件
     if file.content_type.startswith('video/'):
         try:
-            # 视频保存
-            subdir = 'road'
-            save_path = os.path.join(subdir, file.name)
-            filename = default_storage.save(save_path, file)
-            local_path = default_storage.path(filename)
-
-            task = process_video_task(local_path, 'road/results')
-
-            # 构建视频访问URL（示例返回静态数据，实际可替换为分析结果）
-            relative_url = os.path.join(settings.MEDIA_URL, subdir, file.name)
-            video_url = request.build_absolute_uri(relative_url)
+            task = process_video_task(local_path, 'road/results', file.name)
+            # 构建视频访问URL
+            video_url = request.build_absolute_uri(task)
             print(video_url)
-            return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "video", "media_url": task}, status=200)
+            return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "video", "media_url": video_url}, status=200)
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
  
     # 判断是否为图片文件
     if file.content_type.startswith('image/'):
         try:
-            # 创建子目录路径
-            subdir = 'road'
-            save_path = os.path.join(subdir, file.name)
-            # 保存文件
-            filename = default_storage.save(save_path, file)
-            # print(filename)
-            local_path = default_storage.path(filename)
-            # print(local_path)
             results = model(
                 local_path,
                 save=True,
@@ -132,7 +120,9 @@ def upload_image(request):
             )
             # 获取处理后的图片路径
             processed_dir = os.path.join(settings.MEDIA_ROOT, subdir, 'results')
+            print(processed_dir)
             processed_filename = os.path.basename(file.name)
+            print(processed_filename)
             processed_path = os.path.join(processed_dir, processed_filename)
             # print(processed_path)
             # 验证文件是否存在
