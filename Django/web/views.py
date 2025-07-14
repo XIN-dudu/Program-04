@@ -10,7 +10,7 @@ from rest_framework.pagination import PageNumberPagination
 
 import datetime
 from web.serializers import UserSerializer,LogSerializer
-from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY, SystemLog
+from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY, SystemLog, TrajectoryPoint
 import random
 import smtplib
 from email.mime.text import MIMEText
@@ -29,6 +29,7 @@ import numpy as np  # 在文件顶部加上
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework import serializers
+from django.db import connection
 
 # 简单内存验证码存储（生产建议用redis等）
 email_code_cache = {}
@@ -948,65 +949,41 @@ def update_permission(request):
 
 @api_view(['GET'])
 def points_api(request):
-    """
-    轨迹点数据接口。
-
-    GET参数：
-        - start (string, 可选): 起始时间
-        - end (string, 可选): 结束时间
-        - car (string, 可选): 车辆编号
-        - limit (int, 可选): 返回条数
-    返回：
-        - 轨迹点数据列表（含lat, lon, time, car, head, tflag, status）
-    """
-    """
-    GET /api/points/?start=2013/9/12 0:00&end=2013/9/12 1:00&car=15053112970&limit=1000
-    只读取前2万行，按参数筛选，返回前limit条。
-    """
     start = request.GET.get('start')
     end = request.GET.get('end')
     car = request.GET.get('car')
-    limit = int(request.GET.get('limit', 1))
-    file_path = r'C:/Users/27448/Desktop/jn0912_baidu_coords.csv'
-    # 只读取前2万行
-    df = pd.read_csv(file_path, nrows=20000)
-    df.columns = [c.strip() for c in df.columns]
-    # 时间字段转为datetime
-    df['UTC'] = pd.to_datetime(df['UTC'])
-    if start:
-        start_dt = pd.to_datetime(start)
-        df = df[df['UTC'] >= start_dt]
-    if end:
-        end_dt = pd.to_datetime(end)
-        df = df[df['UTC'] <= end_dt]
-    if car:
-        df = df[df['COMMADDR'].astype(str) == str(car)]
-    # 加入HEAD字段
-    result = df[['LAT', 'LON', 'UTC', 'COMMADDR', 'HEAD', 'TFLAG', 'status']]
+    limit = int(request.GET.get('limit', 200))
+    table = 'jn0912_baidu_coords'
 
-    if not car:
-        # 如果car为空，自动从CSV中随机选取一个COMMADDR
-        unique_cars = result['COMMADDR'].unique()
-        if len(unique_cars) > 0:
-            car = str(np.random.choice(unique_cars, 1)[0])
-            result = result[result['COMMADDR'].astype(str) == car]
-        else:
-            result = result.head(limit)
-    else:
-        # 有车牌号时，取前 limit 条，保持轨迹连贯
-        result = result[result['COMMADDR'].astype(str) == str(car)].head(limit)
+    sql = f"SELECT LAT, LON, UTC, COMMADDR, HEAD, TFLAG, status FROM {table} WHERE 1=1"
+    params = []
+    if start:
+        sql += " AND UTC >= %s"
+        params.append(start)
+    if end:
+        sql += " AND UTC <= %s"
+        params.append(end)
+    if car:
+        sql += " AND COMMADDR = %s"
+        params.append(car)
+    sql += " ORDER BY UTC LIMIT %s"
+    params.append(limit)
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
 
     data = [
         {
-            'lat': row['LAT'],
-            'lon': row['LON'],
-            'time': row['UTC'],
-            'car': row['COMMADDR'],
-            'head': row['HEAD'],
-            'tflag': row['TFLAG'],
-            'status': row['status']
+            'lat': row[0],
+            'lon': row[1],
+            'time': row[2],
+            'car': row[3],
+            'head': row[4],
+            'tflag': row[5],
+            'status': row[6]
         }
-        for _, row in result.iterrows()
+        for row in rows
     ]
     return Response(data)
     

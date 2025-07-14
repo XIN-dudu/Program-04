@@ -98,3 +98,16 @@ class SystemLog(models.Model):
     details = models.TextField(blank=True, null=True)  # 其他操作细节 
     def __str__(self):
         return f"{self.user.username} - {self.action} at {self.timestamp}"
+
+# 车辆轨迹点模型
+class TrajectoryPoint(models.Model):
+    lat = models.FloatField()
+    lon = models.FloatField()
+    time = models.DateTimeField()
+    car = models.CharField(max_length=32)
+    head = models.FloatField(null=True, blank=True)
+    tflag = models.CharField(max_length=16, null=True, blank=True)
+    status = models.CharField(max_length=16, null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.car} @ {self.time} ({self.lat}, {self.lon})"
