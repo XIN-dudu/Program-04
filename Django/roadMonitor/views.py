@@ -20,34 +20,8 @@ from .serializers import RoadRecordSerializer
 
 from .models import roadRecord
 
-CLASS_LABELS = {
-    0: "D00",  # 纵向裂纹
-    1: "D10",  # 横向裂纹
-    2: "D20",  # 龟裂
-    3: "D40",  # 坑槽
-    4: "repair"  # 修补区域
-}
 
 model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
-
-def calculate_dimensions(boxes):
-    """计算检测框的尺寸信息"""
-    max_length = 0.0
-    total_area = 0.0
-    
-    for box in boxes:
-        x1, y1, x2, y2 = box.xyxy[0].tolist()  # 获取边界框坐标
-        width = x2 - x1
-        height = y2 - y1
-        
-        # 计算面积和长度（取最长边）
-        area = width * height
-        length = max(width, height)
-        
-        total_area += area
-        max_length = max(max_length, length)
-    
-    return max_length, total_area
 
 def process_video_task(video_path, output_subdir, name):
     try:
@@ -64,43 +38,29 @@ def process_video_task(video_path, output_subdir, name):
         output_path = os.path.join(output_dir, name)
         fourcc = cv2.VideoWriter_fourcc(*'avc1')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-        max_length = 0.0
-        total_area = 0.0
-        frame_count = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            frame_count += 1
-            if frame_count % 5 == 0 :
-                # 调整帧尺寸
-                frame = cv2.resize(frame, (width, height))
-                if frame_count % 5 == 0:
-                    results = model(frame)
-                if results and len(results[0].boxes) > 0:
-                    current_max, current_area = calculate_dimensions(results[0].boxes)
-                    max_length = max(max_length, current_max)
-                    total_area += current_area
-                # YOLO推理
-                results = model(frame)
-                annotated_frame = results[0].plot()
-                
-                # 写入处理后的帧
-                out.write(annotated_frame)
+            
+            # 调整帧尺寸
+            frame = cv2.resize(frame, (width, height))
+            
+            # YOLO推理
+            results = model(frame)
+            annotated_frame = results[0].plot()
+            
+            # 写入处理后的帧
+            out.write(annotated_frame)
         cap.release()
         out.release()
         # 构建访问URL
         rel_url = os.path.join(settings.MEDIA_URL, output_subdir, name)
-        return {
-            'rel_url': rel_url,
-            'max_length': max_length,
-            'total_area': total_area
-        }
+        return rel_url
  
     except Exception as e:
         # 记录详细日志
         return {'status': 'error', 'message': '视频处理失败'}
-
 
 # Create your views here.
 
@@ -141,11 +101,13 @@ def upload_image(request):
     record = roadRecord()
     record.road_id = roadId
     record.detection_time = datetime.now()
-    # record.length = random.uniform(1, 10)
-    # record.area = random.uniform(1, 100)
+    record.length = random.uniform(1, 10)
+    record.area = random.uniform(1, 100)
     record.path = file.name
-    # record.disease_type = 1
+
+    record.disease_type = 1
     record.severity = 1
+    record.save()
 
     # 视频保存
     subdir = 'road'
@@ -157,11 +119,7 @@ def upload_image(request):
         try:
             task = process_video_task(local_path, 'road/results', file.name)
             # 构建视频访问URL
-            res = request.build_absolute_uri(task)
-            record.length = res['max_length'] * 0.01  # 应用转换系数
-            record.area = res['total_area'] * (0.01**2)
-            record.save()
-            video_url = res['rel_url']
+            video_url = request.build_absolute_uri(task)
             print(video_url)
             return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "video", "media_url": video_url}, status=200)
         except Exception as e:
@@ -178,43 +136,6 @@ def upload_image(request):
                 name='results',    # 创建results子目录
                 exist_ok=True
             )
-            if results and len(results[0].boxes) > 0:
-                # 获取检测结果
-                boxes = results[0].boxes
-                classes = boxes.cls.cpu().numpy()  # 获取类别索引
-                confidences = boxes.conf.cpu().numpy()  # 获取置信度
-                
-                # 找到最高置信度的检测结果
-                main_idx = confidences.argmax()
-                class_idx = int(classes[main_idx])
-                label = CLASS_LABELS.get(class_idx, "unknown")
-
-                # 计算尺寸
-                max_length, total_area = calculate_dimensions(boxes)
-                
-                # 应用物理尺寸转换
-                pixel_to_meter = 0.003
-                record.length = max_length * pixel_to_meter
-                record.area = total_area * (pixel_to_meter**2)
-
-                # 根据标签生成动态响应
-                if label == "D00":
-                    record.disease_type = 1
-                elif label == "D10":
-                    record.disease_type = 2
-                elif label == "D20":
-                    record.disease_type = 3
-                elif label == "D40":
-                    record.disease_type = 4
-                elif label == "repair":
-                    record.disease_type = 5
-                    record.severity = 0
-            else:
-                record.length = 0.0
-                record.area = 0.0
-                record.disease_type = 0
-                record.severity = 0
-            record.save()
             # 获取处理后的图片路径
             processed_dir = os.path.join(settings.MEDIA_ROOT, subdir, 'results')
             print(processed_dir)
@@ -250,6 +171,20 @@ def history_get(request):
     print(serializer.data)
     return Response(serializer.data)
 
+@api_view(['GET'])
+def history_video(request):
+    """
+    获取历史检测视频记录。
+
+    GET参数：无
+    返回：
+        - success (string): 操作结果
+    示例返回：
+        {"success": "ok"}
+    """
+    return Response({'success'})
+
+
 @api_view(['DELETE'])
 def history_delete(request):
     """
@@ -277,43 +212,125 @@ def heatmap_data(request):
     示例返回：
         {"points": [{"lng": 117.1, "lat": 36.6}, ...]}
     """
-    import pymysql
     date = request.GET.get('date', '0912')
     start_time = request.GET.get('start_time', '00:00:00')
     end_time = request.GET.get('end_time', '23:59:59')
-    table_name = f'jn{date}_od_pairs'
-
-    # 正确拼接日期字符串
-    month = date[:2]
-    day = date[2:]
-    date_str = f"2013-{month}-{day}"
-    start_dt = f"{date_str} {start_time}"
-    end_dt = f"{date_str} {end_time}"
-
+    # 文件路径
+    file_path = os.path.join(settings.BASE_DIR, f'..', 'pandas', 'data_clean_od_pairs', f'jn{date}_od_pairs.csv')
+    file_path = os.path.abspath(file_path)
+    if not os.path.exists(file_path):
+        return Response({'error': '数据文件不存在'}, status=404)
+    # 只读取部分数据，防止内存溢出
+    df = pd.read_csv(file_path, usecols=['O_LON', 'O_LAT', 'O_TIME'], nrows=500000)  # 可调整nrows
+    # 时间筛选
     try:
-        conn = pymysql.connect(
-            host='122.9.42.250',
-            user='root',
-            password='Xin123456',
-            database='program-04',
-            charset='utf8'
-        )
-        cursor = conn.cursor()
-        sql = f"""
-            SELECT o_lon, o_lat, o_time
-            FROM {table_name}
-            WHERE o_time >= %s AND o_time < %s
-            LIMIT 500000
-        """
-        cursor.execute(sql, (start_dt, end_dt))
-        rows = cursor.fetchall()
-        points = [
-            {'lng': float(row[0]), 'lat': float(row[1])}
-            for row in rows if row[0] is not None and row[1] is not None
-        ]
-        cursor.close()
-        conn.close()
-        return Response({'points': points})
+        df['O_TIME'] = pd.to_datetime(df['O_TIME'])
+        start_dt = df['O_TIME'].dt.normalize()[0].strftime('%Y-%m-%d') + ' ' + start_time
+        end_dt = df['O_TIME'].dt.normalize()[0].strftime('%Y-%m-%d') + ' ' + end_time
+        mask = (df['O_TIME'] >= start_dt) & (df['O_TIME'] < end_dt)
+        df = df[mask]
     except Exception as e:
-        import traceback
-        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+        return Response({'error': f'时间筛选失败: {str(e)}'}, status=400)
+    # 组装热力图点
+    points = [
+        {'lng': row['O_LON'], 'lat': row['O_LAT']} for _, row in df.iterrows()
+    ]
+    return Response({'points': points})
+
+@api_view(['GET'])
+def week_flow(request):
+    """
+    统计一周内每天的客流量（订单数）。
+    GET参数：
+        - start (string, 可选): 起始日期，格式如 '2013-09-12'
+        - end (string, 可选): 结束日期，格式如 '2013-09-18'
+    返回：
+        - [{date: '2013-09-12', count: 123}, ...]
+    """
+    start_date = request.GET.get('start', '2013-09-12')
+    end_date = request.GET.get('end', '2013-09-18')
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT DATE(o_time) as day, COUNT(*) as count
+            FROM jn0912_od_pairs
+            WHERE o_time BETWEEN %s AND %s
+            GROUP BY day
+            ORDER BY day
+        """, [start_date, end_date])
+        rows = cursor.fetchall()
+    from datetime import datetime, timedelta
+    result = []
+    d1 = datetime.strptime(start_date, "%Y-%m-%d")
+    d2 = datetime.strptime(end_date, "%Y-%m-%d")
+    day_map = {row[0].strftime("%Y-%m-%d"): row[1] for row in rows}
+    for i in range((d2 - d1).days + 1):
+        day = (d1 + timedelta(days=i)).strftime("%Y-%m-%d")
+        result.append({"date": day, "count": day_map.get(day, 0)})
+    return JsonResponse(result, safe=False)
+
+@api_view(['GET'])
+def road_distance_type(request):
+    """
+    统计每天短途（<=4km）、中途（4~8km）、长途（>8km）订单数量。
+    GET参数：
+        - start (string, 可选): 起始日期，格式如 '2013-09-12'
+        - end (string, 可选): 结束日期，格式如 '2013-09-18'
+    返回：
+        - [{date, short, medium, long}]
+    """
+    start_date = request.GET.get('start', '2013-09-12')
+    end_date = request.GET.get('end', '2013-09-18')
+    with connection.cursor() as cursor:
+        cursor.execute('''
+            SELECT DATE(o_time) as day,
+                SUM(CASE WHEN distance IS NOT NULL AND distance <= 4000 THEN 1 ELSE 0 END) as short,
+                SUM(CASE WHEN distance IS NOT NULL AND distance > 4000 AND distance <= 8000 THEN 1 ELSE 0 END) as medium,
+                SUM(CASE WHEN distance IS NOT NULL AND distance > 8000 THEN 1 ELSE 0 END) as `long_trip`
+            FROM jn0912_od_pairs
+            WHERE o_time BETWEEN %s AND %s
+            GROUP BY day
+            ORDER BY day
+        ''', [start_date, end_date])
+        rows = cursor.fetchall()
+    from datetime import datetime, timedelta
+    result = []
+    d1 = datetime.strptime(start_date, "%Y-%m-%d")
+    d2 = datetime.strptime(end_date, "%Y-%m-%d")
+    day_map = {row[0].strftime("%Y-%m-%d"): {'short': row[1] or 0, 'medium': row[2] or 0, 'long': row[3] or 0} for row in rows}
+    for i in range((d2 - d1).days + 1):
+        day = (d1 + timedelta(days=i)).strftime("%Y-%m-%d")
+        v = day_map.get(day, {'short': 0, 'medium': 0, 'long': 0})
+        result.append({"date": day, **v})
+    return JsonResponse(result, safe=False)
+
+@api_view(['GET'])
+def road_avg_speed(request):
+    """
+    统计每天所有订单的平均速度（单位：m/s）。
+    GET参数：
+        - start (string, 可选): 起始日期，格式如 '2013-09-12'
+        - end (string, 可选): 结束日期，格式如 '2013-09-18'
+    返回：
+        - [{date, avg_speed}]
+    """
+    start_date = request.GET.get('start', '2013-09-12')
+    end_date = request.GET.get('end', '2013-09-18')
+    with connection.cursor() as cursor:
+        cursor.execute('''
+            SELECT DATE(o_time) as day, AVG(speed) as avg_speed
+            FROM jn0912_od_pairs
+            WHERE o_time BETWEEN %s AND %s
+            GROUP BY day
+            ORDER BY day
+        ''', [start_date, end_date])
+        rows = cursor.fetchall()
+    from datetime import datetime, timedelta
+    result = []
+    d1 = datetime.strptime(start_date, "%Y-%m-%d")
+    d2 = datetime.strptime(end_date, "%Y-%m-%d")
+    day_map = {row[0].strftime("%Y-%m-%d"): (row[1] if row[1] is not None else 0) for row in rows}
+    for i in range((d2 - d1).days + 1):
+        day = (d1 + timedelta(days=i)).strftime("%Y-%m-%d")
+        avg = day_map.get(day, 0)
+        result.append({"date": day, "avg_speed": round(avg, 2) if avg else 0})
+    return JsonResponse(result, safe=False)
