@@ -15,6 +15,9 @@ from datetime import datetime, timedelta
 from ultralytics import YOLO
 import cv2
 from django.db import connection
+import tempfile
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 
 from .serializers import RoadRecordSerializer
 

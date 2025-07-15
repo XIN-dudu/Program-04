@@ -68,3 +68,4 @@ CSRF_TRUSTED_ORIGINS = [
     "http://www.971646.xyz",
     "https://www.971646.xyz",
 ]
+  SELF_BASE_URL = "http://127.0.0.1:8000"

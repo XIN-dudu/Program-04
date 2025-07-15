@@ -165,3 +165,4 @@ SWAGGER_SETTINGS = {
     'JSON_EDITOR': True,  # 启用 JSON 输入框 
     'OPERATIONS_SORTER': 'alpha'  # 接口按字母排序 
 }
+SELF_BASE_URL = "http://localhost:8000" 

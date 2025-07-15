@@ -30,6 +30,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework import serializers
 from django.db import connection
+import subprocess
 
 # 简单内存验证码存储（生产建议用redis等）
 email_code_cache = {}
@@ -1296,3 +1297,97 @@ def get_avatar(request, username):
                 return HttpResponse('头像不存在', status=404)
     except UserProfile.DoesNotExist:
         return HttpResponse('用户不存在', status=404)
+
+# ====== 以下为迁移自原 web/views.py 的活体检测与人脸验证接口 ======
+from rest_framework.decorators import parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import api_view
+import cv2
+import tempfile
+from django.utils import timezone
+from .models import AlertEvent, SystemLog, UserProfile
+from django.http import JsonResponse
+
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def liveness_and_face_verify(request):
+    username = request.data.get('user_id') or request.POST.get('user_id')
+    video_file = request.FILES.get('video')
+    # 收集前端上传的帧图片
+    frames = [file for key, file in request.FILES.items() if key.startswith('frame')]
+    if not video_file or not username or not frames:
+        return JsonResponse({'success': False, 'msg': '缺少参数'}, status=400)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return JsonResponse({'success': False, 'msg': '用户不存在'}, status=400)
+    try:
+        # 1. 活体检测（直接转发视频给百度API）
+        liveness_pass, api_raw = call_baidu_liveness_api_file(video_file, username=user.username, return_raw=True)
+        if not liveness_pass:
+            msg = api_raw.get('msg') or api_raw.get('error_msg') or '活体检测未通过'
+            alert = AlertEvent.objects.create(user=user, alert_type='活体检测失败', alert_time=timezone.now(), status='fail', related_data=api_raw)
+            SystemLog.objects.create(user=user, action='活体检测失败', level='warning', details=msg)
+            return JsonResponse({'success': False, 'msg': msg, 'raw': api_raw})
+        # 2. 人脸识别（用上传的帧图片）
+        verify_success = False
+        for img in frames:
+            if call_face_verify_api(img.read(), user.username):
+                verify_success = True
+                break
+        if verify_success:
+            SystemLog.objects.create(user=user, action='人脸识别通过', level='info')
+            return JsonResponse({'success': True, 'msg': '验证通过'})
+        else:
+            alert = AlertEvent.objects.create(user=user, alert_type='人脸识别失败', alert_time=timezone.now(), status='fail', related_data={})
+            SystemLog.objects.create(user=user, action='人脸识别失败', level='warning', details='人脸识别未通过')
+            return JsonResponse({'success': False, 'msg': '人脸识别未通过'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'msg': f'后端异常: {str(e)}'}, status=500)
+
+def extract_frames(video_path, num_frames=3):
+    cap = cv2.VideoCapture(video_path)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    step = max(1, total_frames // num_frames)
+    frames = []
+    for i in range(num_frames):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, i * step)
+        ret, frame = cap.read()
+        if ret:
+            _, img_encoded = cv2.imencode('.jpg', frame)
+            frames.append(img_encoded.tobytes())
+    cap.release()
+    return frames
+
+def call_baidu_liveness_api_file(video_file, username=None, return_raw=False):
+    import requests
+    from django.conf import settings
+    url = getattr(settings, 'SELF_BASE_URL', 'http://localhost:8000') + '/api/liveness_check/'
+    data = {'username': username}
+    files = {'video': (video_file.name, video_file, video_file.content_type)}
+    try:
+        resp = requests.post(url, data=data, files=files, timeout=20)
+        result = resp.json()
+        liveness = result.get('liveness', False)
+        if return_raw:
+            return liveness, result
+        return liveness
+    except Exception as e:
+        if return_raw:
+            return False, {'msg': f'API请求异常: {str(e)}'}
+        return False
+
+def call_face_verify_api(img_bytes, username):
+    from django.test import RequestFactory
+    from .views import face_verify_one_to_one
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    factory = RequestFactory()
+    image_file = SimpleUploadedFile('frame.jpg', img_bytes, content_type='image/jpeg')
+    data = {'username': username}
+    files = {'image': image_file}
+    request = factory.post('/api/face_verify_one_to_one/', data, files=files)
+    request.FILES['image'] = image_file
+    response = face_verify_one_to_one(request)
+    if hasattr(response, 'data'):
+        return response.data.get('passed', False)
+    return False

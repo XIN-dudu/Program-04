@@ -64,11 +64,20 @@ export default {
       videoUrl: '',
       livenessResult: null,
       imageData: null,
-      result: null
+      result: null,
+      username: '', // 新增字段
+      capturedFrames: [], // 新增：存储截帧图片blob
+      captureInterval: null // 新增：定时器句柄
     };
   },
   mounted() {
     this.startCamera();
+    // 获取当前用户信息
+    axios.get('/api/user/profile/').then(res => {
+      if(res.data && res.data.username) {
+        this.username = res.data.username;
+      }
+    });
   },
   beforeUnmount() {
     this.stopCamera();
@@ -91,53 +100,71 @@ export default {
       }
     },
     // 活体检测相关
-    //暂时注释（由于API限制，次数有限）
     startRecording() {
-      // 注释掉录制功能，让按钮无效
-      // this.videoChunks = [];
-      // this.mediaRecorder = new MediaRecorder(this.videoStream, { mimeType: 'video/webm' });
-      // this.mediaRecorder.ondataavailable = e => {
-      //   if (e.data.size > 0) {
-      //     this.videoChunks.push(e.data);
-      //   }
-      // };
-      // this.mediaRecorder.onstop = () => {
-      //   const blob = new Blob(this.videoChunks, { type: 'video/webm' });
-      //   this.videoUrl = URL.createObjectURL(blob);
-      // };
-      // this.mediaRecorder.start();
-      // this.recording = true;
+      this.videoChunks = [];
+      this.capturedFrames = [];
+      this.mediaRecorder = new MediaRecorder(this.videoStream, { mimeType: 'video/webm' });
+      this.mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) {
+          this.videoChunks.push(e.data);
+        }
+      };
+      this.mediaRecorder.onstop = () => {
+        const blob = new Blob(this.videoChunks, { type: 'video/webm' });
+        this.videoUrl = URL.createObjectURL(blob);
+        // 录制结束时清除定时器
+        if (this.captureInterval) {
+          clearInterval(this.captureInterval);
+          this.captureInterval = null;
+        }
+      };
+      this.mediaRecorder.start();
+      this.recording = true;
+      // 新增：定时截帧（每秒一帧）
+      this.captureInterval = setInterval(() => {
+        const video = this.$refs.video;
+        if (video && video.videoWidth && video.videoHeight) {
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(blob => {
+            if (blob) this.capturedFrames.push(blob);
+          }, 'image/jpeg');
+        }
+      }, 1000); // 每秒截一帧
     },
     stopRecording() {
-      // 注释掉停止录制功能
-      // if (this.mediaRecorder && this.recording) {
-      //   this.mediaRecorder.stop();
-      //   this.recording = false;
-      // }
+      if (this.mediaRecorder && this.recording) {
+        this.mediaRecorder.stop();
+        this.recording = false;
+        // 录制结束时清除定时器
+        if (this.captureInterval) {
+          clearInterval(this.captureInterval);
+          this.captureInterval = null;
+        }
+      }
     },
     resetVideo() {
       this.videoUrl = '';
       this.livenessResult = null;
     },
     async uploadVideo() {
-      // 上传后不再自动跳转到第二步
       const blob = await fetch(this.videoUrl).then(r => r.blob());
       const formData = new FormData();
       formData.append('video', blob, 'liveness.webm');
+      formData.append('user_id', this.username); // 自动带上当前用户名
+      // 新增：上传截帧图片
+      this.capturedFrames.forEach((img, idx) => {
+        formData.append('frame' + idx, img, `frame${idx}.jpg`);
+      });
       try {
-        const response = await axios.post('/api/liveness_check', formData, {
+        const response = await axios.post('/api/liveness_and_face_verify/', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         this.livenessResult = response.data;
-        // 注释掉自动跳转
-        // if (response.data.liveness) {
-        //   this.step = 2;
-        //   this.livenessResult = null;
-        //   this.resetVideo();
-        //   this.startCamera();
-        // }
       } catch (error) {
-        this.livenessResult = { liveness: false, msg: error.response?.data?.msg || '检测失败' };
+        this.livenessResult = { success: false, msg: error.response?.data?.msg || '检测失败' };
       }
     },
     // 拍照识别相关
