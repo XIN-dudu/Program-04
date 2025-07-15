@@ -31,7 +31,7 @@ CLASS_LABELS = {
 types = ['无', '纵向裂纹', '横向裂纹', '龟裂', '坑槽', '修补区域']
 risk_type = ['安全', '低', '中', '高']
 
-model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
+model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
 
 def tostring(length, area):
     return f'裂纹长度:{length:.2f}米\n裂纹面积:{area:.2f}平方米'
@@ -158,6 +158,7 @@ def upload_image(request):
     # 判断是否为视频文件
     if file.content_type.startswith('video/'):
         try:
+            record.file_type = 0
             task = process_video_task(local_path, 'road/results', file.name)
             # 构建视频访问URL
             res = request.build_absolute_uri(task)
@@ -179,6 +180,7 @@ def upload_image(request):
     # 判断是否为图片文件
     if file.content_type.startswith('image/'):
         try:
+            record.file_type = 1
             results = model(
                 local_path,
                 save=True,
@@ -267,7 +269,7 @@ def history_get(request):
     return Response(serializer.data)
 
 @api_view(['DELETE'])
-def history_delete(request):
+def history_delete(request, diseaseId):
     """
     删除历史检测记录。
 
@@ -277,7 +279,41 @@ def history_delete(request):
     示例返回：
         {"success": "ok"}
     """
-    return Response({'success'})
+    try:
+        # 查询需要删除数据库的记录
+        records = roadRecord.objects.filter(
+            disease_id = diseaseId,
+        )
+        
+        if not records.exists():
+            return Response({'error': '记录不存在'}, status=404)
+ 
+        # 删除物理文件
+        for record in records:
+            if record.path:
+                try:
+                    file_path = os.path.join(settings.MEDIA_ROOT, 'upload', record.path)
+                    print(file_path)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        print("jawidjiwadjiaw")
+                    file_path = os.path.join(settings.MEDIA_ROOT, 'results', record.path)
+                    print(file_path)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        print("wdjwaodaoioiwdhowa")
+                    if record.file_type == 0:
+                        print(1)
+                except Exception as e:
+                    print(f"文件删除失败: {str(e)}")
+ 
+        # 删除数据库记录
+        records.delete()
+ 
+        return Response({'success': 'ok'})
+ 
+    except Exception as e:
+        return Response({'error': f'服务器错误: {str(e)}'}, status=500)
 
 @api_view(['GET'])
 def heatmap_data(request):

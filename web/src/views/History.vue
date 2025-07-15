@@ -1,51 +1,65 @@
 <template>
   <div class="container">
-    <!-- 搜索栏 -->
-    <div class="search-bar">
-      <input v-model="search.roadId" type="text" placeholder="输入道路编号" class="input" />
-      <input v-model="search.startTime" type="date" class="input" />
-      <input v-model="search.endTime" type="date" class="input" />
-      <button @click="fetchHistory">搜索</button>
-    </div>
+    <h2>病害记录历史界面</h2>
 
-    <!-- 结果展示 -->
-    <div class="result-list">
-      <div v-if="records.length === 0" class="no-data">暂无历史记录</div>
-      <div v-for="(record, index) in records" :key="index" class="record-card">
-        <h3>道路编号：{{ record.road_id }}</h3>
-        <p><strong>检测时间：</strong>{{ record.detection_date }}</p>
-        <p><strong>病害类型：</strong>{{ record.disease_type }}</p>
-        <p><strong>严重程度：</strong>{{ record.severity }}</p>
+    <div v-if="records.length === 0" class="no-data">暂无任务记录</div>
 
-        <!-- 媒体展示 -->
-        <template v-if="record.url">
-          <img v-if="isImageUrl(record.url)" :src="getFullUrl(record.url)" alt="检测图像" class="media" />
-          <video v-else-if="isVideoUrl(record.url)" :src="getFullUrl(record.url)" controls class="media" />
-          <p v-else class="no-media">⚠️ 不支持的媒体类型</p>
-        </template>
-        <p v-else class="no-media">无图像信息</p>
+    <div
+      v-for="(record, index) in records"
+      :key="record.disease_id"
+      class="record-card"
+    >
+      <h3>道路编号：{{ record.road_id }}</h3>
+      <p><strong>检测时间：</strong>{{ record.detection_date }}</p>
+      <p><strong>病害类型：</strong>{{ record.disease_type }}</p>
+      <p><strong>严重程度：</strong>{{ record.severity }}</p>
 
-        <!-- 删除按钮 -->
-        <button @click="deleteRecord(record.id, index)" class="delete-button">删除</button>
-      </div>
+      <template v-if="record.url">
+        <img
+          v-if="isImageUrl(record.url)"
+          :src="getFullUrl(record.url)"
+          alt="检测图像"
+          class="media"
+        />
+        <video
+          v-else-if="isVideoUrl(record.url)"
+          :src="getFullUrl(record.url)"
+          controls
+          class="media"
+        />
+        <p v-else class="no-media">⚠️ 不支持的媒体类型</p>
+      </template>
+      <p v-else class="no-media">无图像信息</p>
+
+      <!-- 管理员和维修工可见 -->
+      <button
+        v-if="isDeletable"
+        class="delete-button"
+        @click="deleteRecord(record.disease_id, index)"
+      >
+        删除记录
+      </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
+
+// 权限判断
+const userPermissionRef = ref(localStorage.getItem('permission') || '0')
+const isRepairMan = computed(() => userPermissionRef.value === '1')
+const isAdmin = computed(() => userPermissionRef.value === '2')
+
+// 删除权限（维修工或管理员）
+const isDeletable = computed(() => isRepairMan.value || isAdmin.value)
 
 const backendBaseURL = 'http://localhost:8000'
 
-const search = ref({
-  roadId: '',
-  startTime: '',
-  endTime: '',
-})
-
 const records = ref([])
 
+// URL 转换
 const getFullUrl = (url) => {
   if (!url) return ''
   const fixedPath = url.replace(/\\/g, '/')
@@ -55,120 +69,81 @@ const getFullUrl = (url) => {
 const isImageUrl = (url) => /\.(jpg|jpeg|png|gif|bmp)$/i.test(url)
 const isVideoUrl = (url) => /\.(mp4|webm|ogg|avi|mov)$/i.test(url)
 
-const fetchHistory = async () => {
+// 获取记录
+const fetchRecords = async () => {
   try {
-    const params = {}
-    if (search.value.roadId) params.roadId = search.value.roadId
-    if (search.value.startTime) params.startTime = search.value.startTime
-    if (search.value.endTime) params.endTime = search.value.endTime
-
-    const res = await axios.get(`${backendBaseURL}/api/history/list`, { params })
-    let allRecords = res.data
-
-    // 前端过滤（精确匹配）
-    if (search.value.roadId) {
-      allRecords = allRecords.filter(r => String(r.road_id) === String(search.value.roadId))
-    }
-    if (search.value.startTime) {
-      allRecords = allRecords.filter(r => r.detection_date >= search.value.startTime)
-    }
-    if (search.value.endTime) {
-      allRecords = allRecords.filter(r => r.detection_date <= search.value.endTime)
-    }
-
-    records.value = allRecords
+    const res = await axios.get(`${backendBaseURL}/api/history/list`, {
+      withCredentials: true
+    })
+    records.value = res.data
   } catch (err) {
-    console.error('获取数据失败：', err)
+    console.error('获取记录失败:', err)
     records.value = []
   }
 }
 
-const deleteRecord = async (id, index) => {
-  if (!confirm('确定要删除该记录吗？')) return
+// 删除记录
+const deleteRecord = async (diseaseId, index) => {
+  if (!confirm('确定要删除这条记录吗？')) return
 
   try {
-    await axios.delete(`${backendBaseURL}/api/history/${id}/delete`)
+    await axios.delete(`${backendBaseURL}/api/history/${diseaseId}/delete`, {
+      withCredentials: true
+    })
     records.value.splice(index, 1)
   } catch (error) {
-    console.error('删除失败：', error)
+    console.error('删除失败:', error)
     alert('删除失败，请稍后重试')
   }
 }
 
 onMounted(() => {
-  fetchHistory()
+  fetchRecords()
 })
 </script>
 
 <style scoped>
 .container {
   padding: 20px;
+  max-width: 1000px;
+  margin: auto;
   font-family: Arial, sans-serif;
 }
 
-.search-bar {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+h2 {
   margin-bottom: 20px;
 }
 
-.input {
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  flex: 1;
-  min-width: 150px;
-}
-
-button {
-  padding: 8px 12px;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-button:hover {
-  background-color: #0056b3;
-}
-
-.result-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
+.no-data {
+  font-style: italic;
+  color: #666;
 }
 
 .record-card {
-  background: #f9f9f9;
+  background-color: #f9f9f9;
   border-left: 4px solid #007bff;
   padding: 15px;
   border-radius: 6px;
+  margin-bottom: 15px;
 }
 
 .media {
   width: 100%;
   max-width: 600px;
   margin-top: 10px;
-  border: 1px solid #ddd;
+  border: 1px solid #ccc;
   border-radius: 4px;
 }
 
-.no-data {
-  color: #888;
-  font-style: italic;
-}
-
 .no-media {
-  color: #555;
+  color: #777;
   font-style: italic;
   margin-top: 10px;
 }
 
 .delete-button {
-  margin-top: 10px;
-  padding: 6px 10px;
+  margin-top: 12px;
+  padding: 6px 12px;
   background-color: #dc3545;
   color: white;
   border: none;
@@ -177,6 +152,6 @@ button:hover {
 }
 
 .delete-button:hover {
-  background-color: #a71d2a;
+  background-color: #b02a37;
 }
 </style>
