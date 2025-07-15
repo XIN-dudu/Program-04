@@ -7,6 +7,7 @@ const routes = [
   { path: '/', component: () => import('../views/Login.vue') },
   { path: '/home', component: () => import('../views/Info.vue'), meta: { requiresAuth: true } },
   { path: '/monitor', component: () => import('../views/MonitorRoad.vue'), meta: { requiresAuth: true } },
+  { path: '/maintaince', component: () => import('../views/Maintaince.vue'), meta: { requiresAuth: true } },
   {
     path: '/urbanTraffic',
     component: () => import('@/views/UrbanTraffic.vue'),
@@ -26,11 +27,7 @@ const routes = [
       {
         path: 'road',
         component: () => import('@/views/urbanTraffic/Road.vue')
-      },
-      {
-        path: 'shandongmap',
-        component: () => import('@/views/urbanTraffic/ShandongMap.vue')
-      },
+      }
     ]
   },
   { path: '/history', component: () => import('../views/History.vue'), meta: { requiresAuth: true } },

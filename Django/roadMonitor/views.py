@@ -21,7 +21,7 @@ from .serializers import RoadRecordSerializer
 from .models import roadRecord
 
 
-model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
+# model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
 
 CLASS_LABELS = {
     0: "D00",  # 纵向裂纹
@@ -31,7 +31,7 @@ CLASS_LABELS = {
     4: "repair"  # 修补区域
 }
 
-model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
+model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
 
 def calculate_dimensions(boxes):
     """计算检测框的尺寸信息"""
