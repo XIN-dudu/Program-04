@@ -5,12 +5,6 @@ from rest_framework import serializers
 from .models import roadRecord
 
 class RoadRecordSerializer(serializers.ModelSerializer):
-    # 显示可读标签的字段（只读）
-    #disease_type_label = serializers.CharField(source='get_disease_type_display', read_only=True)
-    #severity_label = serializers.CharField(source='get_severity_display', read_only=True)
-    
-    # 自动处理时间字段
-    #detection_time = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = roadRecord
@@ -21,10 +15,6 @@ class RoadRecordSerializer(serializers.ModelSerializer):
             'severity': {'required': True},
             'path': {'required': True, 'max_length': 255},
         }
-    # def get_url(self, obj):
-    #     # 假设你的文件存储在MEDIA_ROOT
-    #     url = os.path.join(settings.MEDIA_URL, 'road', 'results', obj.path)
-    #     return url
 
     def validate_length(self, value):
         """验证裂缝长度必须为正数"""

@@ -15,9 +15,6 @@ from datetime import datetime, timedelta
 from ultralytics import YOLO
 import cv2
 from django.db import connection
-import tempfile
-from django.views.decorators.csrf import csrf_exempt
-from django.utils import timezone
 
 from .serializers import RoadRecordSerializer
 
@@ -231,16 +228,16 @@ def upload_image(request):
             record.save()
             # 获取处理后的图片路径
             processed_dir = os.path.join(settings.MEDIA_ROOT, subdir, 'results')
-            print(processed_dir)
-            processed_filename = os.path.basename(file.name)
-            print(processed_filename)
-            processed_path = os.path.join(processed_dir, processed_filename)
-            # print(processed_path)
+            #print(processed_dir)
+            processed_filename = os.path.splitext(file.name)[0]
+            #print(processed_filename)
+            processed_path = os.path.join(processed_dir, f"{processed_filename}.jpg")
+            print(processed_path)
             # 验证文件是否存在
             if not os.path.exists(processed_path):
                 return JsonResponse({'status': 'error', 'message': '处理后的图片未生成'}, status=500)
             # 构建完整的URL
-            relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', processed_filename)
+            relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', f"{processed_filename}.jpg")
             image_url = request.build_absolute_uri(relative_url)
             print(image_url)
             return Response({'title' : types[record.disease_type],
@@ -295,16 +292,16 @@ def history_delete(request, diseaseId):
         for record in records:
             if record.path:
                 try:
-                    file_path = os.path.join(settings.MEDIA_ROOT, 'upload', record.path)
+                    file_path = os.path.join(settings.MEDIA_ROOT, 'road/upload', record.path)
                     print(file_path)
                     if os.path.exists(file_path):
                         os.remove(file_path)
-                        print("jawidjiwadjiaw")
-                    file_path = os.path.join(settings.MEDIA_ROOT, 'results', record.path)
-                    print(file_path)
+                    file_path = os.path.join(settings.MEDIA_ROOT, 'road' , 'results', record.path)
                     if os.path.exists(file_path):
                         os.remove(file_path)
-                        print("wdjwaodaoioiwdhowa")
+                    file_path = os.path.join(settings.MEDIA_ROOT, 'road' , 'results', f'{os.path.splitext(record.path)[0]}.jpg')
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
                     if record.file_type == 0:
                         print(1)
                 except Exception as e:
