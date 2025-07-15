@@ -7,6 +7,7 @@ const routes = [
   { path: '/', component: () => import('../views/Login.vue') },
   { path: '/home', component: () => import('../views/Info.vue'), meta: { requiresAuth: true } },
   { path: '/monitor', component: () => import('../views/MonitorRoad.vue'), meta: { requiresAuth: true } },
+  { path: '/maintaince', component: () => import('../views/Maintaince.vue'), meta: { requiresAuth: true } },
   {
     path: '/urbanTraffic',
     component: () => import('@/views/UrbanTraffic.vue'),
