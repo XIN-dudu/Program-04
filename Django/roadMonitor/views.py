@@ -14,6 +14,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from ultralytics import YOLO
 import cv2
+from django.db import connection
 
 from .serializers import RoadRecordSerializer
 
@@ -235,3 +236,101 @@ def heatmap_data(request):
         {'lng': row['O_LON'], 'lat': row['O_LAT']} for _, row in df.iterrows()
     ]
     return Response({'points': points})
+
+@api_view(['GET'])
+def week_flow(request):
+    """
+    统计一周内每天的客流量（订单数）。
+    GET参数：
+        - start (string, 可选): 起始日期，格式如 '2013-09-12'
+        - end (string, 可选): 结束日期，格式如 '2013-09-18'
+    返回：
+        - [{date: '2013-09-12', count: 123}, ...]
+    """
+    start_date = request.GET.get('start', '2013-09-12')
+    end_date = request.GET.get('end', '2013-09-18')
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT DATE(o_time) as day, COUNT(*) as count
+            FROM jn0912_od_pairs
+            WHERE o_time BETWEEN %s AND %s
+            GROUP BY day
+            ORDER BY day
+        """, [start_date, end_date])
+        rows = cursor.fetchall()
+    from datetime import datetime, timedelta
+    result = []
+    d1 = datetime.strptime(start_date, "%Y-%m-%d")
+    d2 = datetime.strptime(end_date, "%Y-%m-%d")
+    day_map = {row[0].strftime("%Y-%m-%d"): row[1] for row in rows}
+    for i in range((d2 - d1).days + 1):
+        day = (d1 + timedelta(days=i)).strftime("%Y-%m-%d")
+        result.append({"date": day, "count": day_map.get(day, 0)})
+    return JsonResponse(result, safe=False)
+
+@api_view(['GET'])
+def road_distance_type(request):
+    """
+    统计每天短途（<=4km）、中途（4~8km）、长途（>8km）订单数量。
+    GET参数：
+        - start (string, 可选): 起始日期，格式如 '2013-09-12'
+        - end (string, 可选): 结束日期，格式如 '2013-09-18'
+    返回：
+        - [{date, short, medium, long}]
+    """
+    start_date = request.GET.get('start', '2013-09-12')
+    end_date = request.GET.get('end', '2013-09-18')
+    with connection.cursor() as cursor:
+        cursor.execute('''
+            SELECT DATE(o_time) as day,
+                SUM(CASE WHEN distance IS NOT NULL AND distance <= 4000 THEN 1 ELSE 0 END) as short,
+                SUM(CASE WHEN distance IS NOT NULL AND distance > 4000 AND distance <= 8000 THEN 1 ELSE 0 END) as medium,
+                SUM(CASE WHEN distance IS NOT NULL AND distance > 8000 THEN 1 ELSE 0 END) as `long_trip`
+            FROM jn0912_od_pairs
+            WHERE o_time BETWEEN %s AND %s
+            GROUP BY day
+            ORDER BY day
+        ''', [start_date, end_date])
+        rows = cursor.fetchall()
+    from datetime import datetime, timedelta
+    result = []
+    d1 = datetime.strptime(start_date, "%Y-%m-%d")
+    d2 = datetime.strptime(end_date, "%Y-%m-%d")
+    day_map = {row[0].strftime("%Y-%m-%d"): {'short': row[1] or 0, 'medium': row[2] or 0, 'long': row[3] or 0} for row in rows}
+    for i in range((d2 - d1).days + 1):
+        day = (d1 + timedelta(days=i)).strftime("%Y-%m-%d")
+        v = day_map.get(day, {'short': 0, 'medium': 0, 'long': 0})
+        result.append({"date": day, **v})
+    return JsonResponse(result, safe=False)
+
+@api_view(['GET'])
+def road_avg_speed(request):
+    """
+    统计每天所有订单的平均速度（单位：m/s）。
+    GET参数：
+        - start (string, 可选): 起始日期，格式如 '2013-09-12'
+        - end (string, 可选): 结束日期，格式如 '2013-09-18'
+    返回：
+        - [{date, avg_speed}]
+    """
+    start_date = request.GET.get('start', '2013-09-12')
+    end_date = request.GET.get('end', '2013-09-18')
+    with connection.cursor() as cursor:
+        cursor.execute('''
+            SELECT DATE(o_time) as day, AVG(speed) as avg_speed
+            FROM jn0912_od_pairs
+            WHERE o_time BETWEEN %s AND %s
+            GROUP BY day
+            ORDER BY day
+        ''', [start_date, end_date])
+        rows = cursor.fetchall()
+    from datetime import datetime, timedelta
+    result = []
+    d1 = datetime.strptime(start_date, "%Y-%m-%d")
+    d2 = datetime.strptime(end_date, "%Y-%m-%d")
+    day_map = {row[0].strftime("%Y-%m-%d"): (row[1] if row[1] is not None else 0) for row in rows}
+    for i in range((d2 - d1).days + 1):
+        day = (d1 + timedelta(days=i)).strftime("%Y-%m-%d")
+        avg = day_map.get(day, 0)
+        result.append({"date": day, "avg_speed": round(avg, 2) if avg else 0})
+    return JsonResponse(result, safe=False)

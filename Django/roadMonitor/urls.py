@@ -7,4 +7,7 @@ urlpatterns = [
     path('history/video', views.history_video),
     path('history/delete', views.history_delete),
     path('heatmap/', views.heatmap_data),
+    path('week_flow/', views.week_flow),
+    path('road_distance_type/', views.road_distance_type),
+    path('road_avg_speed/', views.road_avg_speed),
 ]

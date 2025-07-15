@@ -26,7 +26,11 @@ const routes = [
       {
         path: 'road',
         component: () => import('@/views/urbanTraffic/Road.vue')
-      }
+      },
+      {
+        path: 'shandongmap',
+        component: () => import('@/views/urbanTraffic/ShandongMap.vue')
+      },
     ]
   },
   { path: '/history', component: () => import('../views/History.vue'), meta: { requiresAuth: true } },

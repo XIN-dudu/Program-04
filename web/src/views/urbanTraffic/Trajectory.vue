@@ -15,6 +15,10 @@
           <label>车牌标识：</label>
           <input v-model="carId" placeholder="请输入车牌号（可选）" />
         </div>
+        <div class="form-row">
+          <label>limit：</label>
+          <input v-model="limit" type="number" min="1" max="10000" placeholder="最大点数" />
+        </div>
         <button @click="queryTrajectory">查询轨迹</button>
       </div>
     </div>
@@ -32,9 +36,13 @@ export default {
       startTime: '',
       endTime: '',
       carId: '',
+      limit: 200, // 默认limit
       map: null,
       polyline: null,
-      arrowMarkers: [] // 新增：用于存储箭头marker
+      startMarker: null,
+      endMarker: null,
+      arrowMarkers: [], // 新增：用于存储箭头marker
+      infoMarkers: [], // 新增：用于存储散点marker
     };
   },
   mounted() {
@@ -58,64 +66,122 @@ export default {
     },
     async queryTrajectory() {
       if (!this.map) return;
-      if (this.polyline) {
-        this.map.removeOverlay(this.polyline);
-        this.polyline = null;
-      }
-      // 清除旧的箭头
-      if (this.arrowMarkers && this.arrowMarkers.length > 0) {
-        this.arrowMarkers.forEach(m => this.map.removeOverlay(m));
-        this.arrowMarkers = [];
-      }
       let params = [];
       if (this.startTime) params.push(`start=${encodeURIComponent(this.formatTime(this.startTime))}`);
       if (this.endTime) params.push(`end=${encodeURIComponent(this.formatTime(this.endTime))}`);
       if (this.carId) params.push(`car=${encodeURIComponent(this.carId)}`);
-      params.push('limit=200');
+      if (this.limit) params.push(`limit=${this.limit}`);
       const url = `/api/points/?${params.join('&')}`;
       try {
         const res = await fetch(url);
         const data = await res.json();
         const points = data.filter(item => item.lat && item.lon).map(item => ({
           point: new window.BMap.Point(item.lon, item.lat),
-          head: item.head // 方向角度
+          head: item.head,
+          car: item.car,
+          time: item.time,
+          tflag: item.tflag,
+          status: item.status,
+          speed: item.SPEED !== undefined ? item.SPEED : item.speed // 兼容大小写
         }));
-        if (points.length > 0) {
-          // 轨迹线为绿色
-          this.polyline = new window.BMap.Polyline(points.map(p => p.point), {
-            strokeColor: "#43a047", // 好看的绿色
-            strokeWeight: 7,
-            strokeOpacity: 0.85
-          });
+        // 清除旧的marker
+        if (this.polyline) {
+          this.map.removeOverlay(this.polyline);
+          this.polyline = null;
+        }
+        if (this.arrowMarkers && this.arrowMarkers.length > 0) {
+          this.arrowMarkers.forEach(m => this.map.removeOverlay(m));
+          this.arrowMarkers = [];
+        }
+        if (this.infoMarkers && this.infoMarkers.length > 0) {
+          this.infoMarkers.forEach(m => this.map.removeOverlay(m));
+          this.infoMarkers = [];
+        }
+        // 判断模式
+        if (this.carId && points.length > 0) {
+          // 轨迹模式（原有）
+          this.polyline = new window.BMap.Polyline(points.map(p => p.point), {strokeColor:"#0288d1", strokeWeight:5, strokeOpacity:0.8});
           this.map.addOverlay(this.polyline);
           this.map.setViewport(points.map(p => p.point));
-
-          // 沿轨迹每隔一定距离密集分布小箭头marker，方向与轨迹一致
-          const arrowStep = 5; // 每隔5个点画一个箭头
-          for (let i = 0; i < points.length - 1; i += arrowStep) {
-            const p = points[i];
-            const next = points[i + 1] || points[i];
-            // 计算方向角
-            const dx = next.point.lng - p.point.lng;
-            const dy = next.point.lat - p.point.lat;
-            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-            // 画自定义小箭头
+          // 只在尾部画一个箭头
+          if (points.length > 1) {
+            const tail = points[points.length - 1];
             const arrow = new window.BMap.Marker(
-              p.point,
+              tail.point,
               {
-                icon: new window.BMap.Symbol("M0,0 L10,0 L5,10 Z", {
+                icon: new window.BMap.Symbol("M0,-10 L6,10 L0,5 L-6,10 Z", {
                   scale: 1.2,
-                  strokeColor: "#fff",
+                  strokeColor: "#0288d1",
                   strokeWeight: 2,
-                  rotation: angle,
-                  fillColor: "#fff",
-                  fillOpacity: 1
+                  rotation: tail.head || 0,
+                  fillColor: "#0288d1",
+                  fillOpacity: 0.9
                 })
               }
             );
             this.map.addOverlay(arrow);
             this.arrowMarkers.push(arrow);
           }
+        } else if (!this.carId && points.length > 0) {
+          // 散点模式
+          this.map.setViewport(points.map(p => p.point));
+          this.infoMarkers = [];
+          points.forEach(p => {
+            const marker = new window.BMap.Marker(p.point);
+            // 信息内容
+            let headText = '';
+            let headRaw = '';
+            if (typeof p.head === 'number') {
+              const dirs = ['正北','东北','正东','东南','正南','西南','正西','西北','正北'];
+              const idx = Math.round(((p.head % 360) / 45));
+              const baseDir = dirs[idx];
+              let offset = Math.round((p.head % 45));
+              if (offset < 0) offset += 45;
+              headText = `${baseDir}`;
+              if (offset > 0) headText += `偏${offset}度`;
+              headRaw = `${p.head}度`;
+            }
+            // 时间格式化
+            let timeStr = p.time;
+            if (typeof timeStr === 'string') {
+              timeStr = timeStr.replace('T', ' ');
+            }
+            // 速度（SPEED字段，cm/s转m/s，始终显示）
+            let speedStr = '';
+            if (p.speed !== undefined && p.speed !== null && !isNaN(Number(p.speed))) {
+              const v = Number(p.speed) / 100;
+              speedStr = v.toFixed(2) + ' m/s';
+            } else {
+              speedStr = '0.00 m/s';
+            }
+            // 状态（status字段）
+            let stateStr = '';
+            if (p.status === 1 || p.status === '1') {
+              stateStr = '载客';
+            } else if (p.status === 0 || p.status === '0') {
+              stateStr = '空载';
+            } else {
+              stateStr = p.status || '';
+            }
+            const info = `<div style='min-width:180px;font-size:13px;line-height:1.6;'>
+              <b>车牌号：</b>${p.car}<br/>
+              <b>时间：</b>${timeStr}<br/>
+              <b>经度：</b>${p.point.lng.toFixed(6)}<br/>
+              <b>纬度：</b>${p.point.lat.toFixed(6)}<br/>
+              <b>方向：</b>${headText}${headRaw ? '（' + headRaw + '）' : ''}<br/>
+              <b>速度：</b>${speedStr}<br/>
+              <b>状态：</b>${stateStr}
+            </div>`;
+            marker.addEventListener('mouseover', function() {
+              const infoWin = new window.BMap.InfoWindow(info, {offset: new window.BMap.Size(0, -10)});
+              marker.openInfoWindow(infoWin);
+            });
+            marker.addEventListener('mouseout', function() {
+              marker.closeInfoWindow();
+            });
+            this.map.addOverlay(marker);
+            this.infoMarkers.push(marker);
+          });
         }
       } catch (e) {
         console.error('轨迹查询失败', e);

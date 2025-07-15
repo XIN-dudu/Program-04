@@ -1001,7 +1001,7 @@ def points_api(request):
     limit = int(request.GET.get('limit', 200))
     table = 'jn0912_baidu_coords'
 
-    sql = f"SELECT LAT, LON, UTC, COMMADDR, HEAD, TFLAG, status FROM {table} WHERE 1=1"
+    sql = f"SELECT LAT, LON, UTC, COMMADDR, HEAD, TFLAG, status, SPEED FROM {table} WHERE 1=1"
     params = []
     if start:
         sql += " AND UTC >= %s"
@@ -1027,7 +1027,8 @@ def points_api(request):
             'car': row[3],
             'head': row[4],
             'tflag': row[5],
-            'status': row[6]
+            'status': row[6],
+            'speed': row[7]
         }
         for row in rows
     ]
