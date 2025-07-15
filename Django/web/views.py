@@ -1308,6 +1308,43 @@ from django.utils import timezone
 from .models import AlertEvent, SystemLog, UserProfile
 from django.http import JsonResponse
 
+@api_view(['GET'])
+def car_list(request):
+    """
+    支持分页和模糊搜索的车牌号列表
+    """
+    table = 'jn0912_baidu_coords'
+    search = request.GET.get('search', '')
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 20))
+    offset = (page - 1) * page_size
+
+    sql = f"SELECT DISTINCT COMMADDR FROM {table} WHERE 1=1"
+    params = []
+    if search:
+        sql += " AND COMMADDR LIKE %s"
+        params.append(f"%{search}%")
+    sql += " LIMIT %s OFFSET %s"
+    params.extend([page_size, offset])
+
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+
+    # 统计总数
+    count_sql = f"SELECT COUNT(DISTINCT COMMADDR) FROM {table} WHERE 1=1"
+    count_params = []
+    if search:
+        count_sql += " AND COMMADDR LIKE %s"
+        count_params.append(f"%{search}%")
+    with connection.cursor() as cursor:
+        cursor.execute(count_sql, count_params)
+        total = cursor.fetchone()[0]
+
+    cars = [row[0] for row in rows]
+    return JsonResponse({'results': cars, 'count': total})
+
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def liveness_and_face_verify(request):

@@ -29,7 +29,20 @@
         </div>
         <div class="form-row">
           <label>车牌标识：</label>
-          <input v-model="carId" placeholder="请输入车牌号" />
+          <div class="car-select-wrapper">
+            <input
+              v-model="carIdInput"
+              @input="onCarInput"
+              @focus="showCarDropdown = true"
+              @blur="onCarBlur"
+              placeholder="请输入或选择车牌号"
+              autocomplete="off"
+            />
+            <ul v-if="showCarDropdown && carOptions.length" class="car-dropdown">
+              <li v-for="item in carOptions" :key="item" @mousedown.prevent="selectCar(item)">{{ item }}</li>
+              <li v-if="carHasMore" class="car-dropdown-more" @mousedown.prevent="loadMoreCarOptions">加载更多...</li>
+            </ul>
+          </div>
         </div>
         <div style="position:relative;">
           <button
@@ -71,7 +84,15 @@ export default {
       // 按车辆查询
       carStart: '',
       carEnd: '',
+      carIdInput: '',
       carId: '',
+      carOptions: [],
+      carPage: 1,
+      carPageSize: 20,
+      carHasMore: false,
+      carLoading: false,
+      showCarDropdown: false,
+      carSearch: '',
       // 地图相关
       map: null,
       polyline: null,
@@ -81,6 +102,11 @@ export default {
       infoMarkers: [],
       showCarIdTip: false,
     };
+  },
+  watch: {
+    carId(val) {
+      this.carIdInput = val;
+    }
   },
   mounted() {
     this.initMap();
@@ -113,16 +139,58 @@ export default {
         showMsg('指定日期范围内没有记录！');
       }
     },
+    onCarInput(e) {
+      this.carIdInput = e.target.value;
+      this.carPage = 1;
+      this.fetchCarOptions();
+      this.showCarDropdown = true;
+      this.carId = '';
+    },
+    onCarBlur() {
+      setTimeout(() => {
+        this.showCarDropdown = false;
+        if (this.carIdInput && !this.carId) {
+          // 输入但未选中，自动填入第一个匹配项
+          if (this.carOptions.length > 0) {
+            this.selectCar(this.carOptions[0]);
+          }
+        }
+      }, 200);
+    },
+    selectCar(item) {
+      this.carId = item;
+      this.carIdInput = item;
+      this.showCarDropdown = false;
+    },
+    async fetchCarOptions(loadMore = false) {
+      if (!loadMore) this.carOptions = [];
+      this.carLoading = true;
+      const page = loadMore ? this.carPage + 1 : 1;
+      const res = await fetch(`/api/cars/?search=${encodeURIComponent(this.carIdInput)}&page=${page}&page_size=${this.carPageSize}`);
+      const data = await res.json();
+      if (loadMore) {
+        this.carOptions = this.carOptions.concat(data.results);
+        this.carPage = page;
+      } else {
+        this.carOptions = data.results;
+        this.carPage = 1;
+      }
+      this.carHasMore = this.carOptions.length < data.count;
+      this.carLoading = false;
+    },
+    loadMoreCarOptions() {
+      this.fetchCarOptions(true);
+    },
     async queryByCar() {
       if (!this.map) return;
       if (!this.carId) return;
       // 先查车牌号是否存在
       let carExist = false;
       try {
-        // 假设有/api/cars/接口返回所有车牌号列表（如无请替换为实际接口）
-        const res = await fetch('/api/cars/');
+        // 适配分页接口结构
+        const res = await fetch(`/api/cars/?search=${encodeURIComponent(this.carId)}&page=1&page_size=20`);
         const carList = await res.json();
-        carExist = Array.isArray(carList) && carList.includes(this.carId);
+        carExist = Array.isArray(carList.results) && carList.results.includes(this.carId);
       } catch(e) {
         // 如果接口失败，默认允许查（不拦截）
         carExist = true;
@@ -374,5 +442,44 @@ export default {
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   margin-top: 6px;
   z-index: 10;
+}
+.car-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+.car-select-wrapper input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.car-dropdown {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #b3e5fc;
+  border-radius: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 20;
+  margin-top: 2px;
+  box-shadow: 0 2px 8px rgba(2,136,209,0.07);
+  padding: 0;
+  list-style: none;
+}
+.car-dropdown li {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 15px;
+}
+.car-dropdown li:hover {
+  background: #e3f2fd;
+}
+.car-dropdown-more {
+  text-align: center;
+  color: #0288d1;
+  font-weight: bold;
+  cursor: pointer;
+  background: #fafdff;
 }
 </style> 
