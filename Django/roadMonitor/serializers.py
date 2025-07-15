@@ -14,7 +14,7 @@ class RoadRecordSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = roadRecord
-        fields = ['road_id', 'disease_type', 'severity']
+        fields = ['disease_id', 'road_id', 'disease_type', 'severity']
         extra_kwargs = {
             'road_id': {'required': True, 'min_value': 1},
             'disease_type': {'required': True},

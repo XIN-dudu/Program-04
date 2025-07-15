@@ -20,9 +20,6 @@ from .serializers import RoadRecordSerializer
 
 from .models import roadRecord
 
-
-# model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
-
 CLASS_LABELS = {
     0: "D00",  # 纵向裂纹
     1: "D10",  # 横向裂纹
@@ -31,7 +28,13 @@ CLASS_LABELS = {
     4: "repair"  # 修补区域
 }
 
+types = ['无', '纵向裂纹', '横向裂纹', '龟裂', '坑槽', '修补区域']
+risk_type = ['安全', '低', '中', '高']
+
 model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
+
+def tostring(length, area):
+    return f'裂纹长度:{length:.2f}米\n裂纹面积:{area:.2f}平方米'
 
 def calculate_dimensions(boxes):
     """计算检测框的尺寸信息"""
@@ -144,15 +147,12 @@ def upload_image(request):
     record = roadRecord()
     record.road_id = roadId
     record.detection_time = datetime.now()
-    # record.length = random.uniform(1, 10)
-    # record.area = random.uniform(1, 100)
     record.path = file.name
-    # record.disease_type = 1
     record.severity = 1
 
-    # 视频保存
+    # 保存
     subdir = 'road'
-    save_path = os.path.join(subdir, file.name)
+    save_path = os.path.join(subdir, 'upload', file.name)
     filename = default_storage.save(save_path, file)
     local_path = default_storage.path(filename)
     # 判断是否为视频文件
@@ -166,7 +166,13 @@ def upload_image(request):
             record.save()
             video_url = res['rel_url']
             print(video_url)
-            return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "video", "media_url": video_url}, status=200)
+            return Response({'title' : types[record.disease_type],
+                            'description': tostring(record.length, record.area),
+                            'severity': risk_type[record.severity],
+                            'position': ('翻斗花园街区' + record.road_id),
+                            "media_type": "video",
+                            "media_url": video_url},
+                            status=200)
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
  
@@ -232,7 +238,13 @@ def upload_image(request):
             relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', processed_filename)
             image_url = request.build_absolute_uri(relative_url)
             print(image_url)
-            return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "image", 'media_url': image_url}, status=200)
+            return Response({'title' : types[record.disease_type],
+                            'description': tostring(record.length, record.area),
+                            'severity': risk_type[record.severity],
+                            'position': ('翻斗花园街区' + record.road_id),
+                            "media_type": "image",
+                            'media_url': image_url},
+                            status=200)
         
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)

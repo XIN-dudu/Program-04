@@ -42,7 +42,7 @@ class roadRecord(models.Model):
     length = models.FloatField()
     area = models.FloatField()
     SEVERITY_CHOICES = [
-        (0, 'SAVE'),
+        (0, 'SAFE'),
         (1, 'LOW'),
         (2, 'MEDIUM'),
         (3, 'HIGH'),    
