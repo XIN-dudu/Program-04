@@ -139,6 +139,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",
+    "http://120.46.211.91"
 ]
 CORS_ALLOW_HEADERS = [
     "accept",
@@ -152,7 +153,9 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
 ]
 SESSION_COOKIE_SAMESITE = None
-SESSION_COOKIE_SECURE = False
+# 可选：设置会话安全
+SESSION_COOKIE_SECURE = True
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # 关闭浏览器自动退出登录
 
 # 可选：Swagger 自定义配置 
 SWAGGER_SETTINGS = {

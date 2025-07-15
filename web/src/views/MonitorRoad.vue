@@ -4,15 +4,8 @@
     <div class="left-panel">
       <!-- 视频或图片显示 -->
       <div class="media-display">
-        <video
-          ref="videoElement"
-          controls
-          autoplay
-          playsinline
-          muted
-          v-if="isVideo"
-          style="max-width: 100%; max-height: 100%;"
-        ></video>
+        <video ref="videoElement" controls autoplay playsinline muted v-if="isVideo"
+          style="max-width: 100%; max-height: 100%;"></video>
         <img v-else-if="isImage" :src="mediaPreviewUrl" alt="上传图片预览" />
         <div v-else class="media-placeholder">
           <p v-if="selectedFile">{{ selectedFile.name }}</p>
@@ -42,13 +35,21 @@
     <div class="right-panel">
       <div class="result-header">检测结果：</div>
       <div class="result-list">
-        <p v-if="result == null">具体展示结果</p>
-        <p v-else class="result-card">
+        <p v-if="!result">具体展示结果</p>
+        <div v-else class="result-card">
           <h3>{{ result.title }}</h3>
           <p>{{ result.description }}</p>
           <p><strong>严重程度:</strong> {{ result.severity }}</p>
           <p>{{ result.position }}</p>
-        </p>
+
+          <div v-if="result.media_url" class="result-media">
+            <video v-if="result.media_type === 'video'" controls autoplay playsinline muted style="width:100%">
+              <source :src="result.media_url" :type="'video/mp4'" />
+              您的浏览器不支持视频播放
+            </video>
+            <img v-else-if="result.media_type === 'image'" :src="result.media_url" alt="检测结果示意图" />
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -138,8 +139,13 @@ const startRecording = () => {
 
   recordedChunks.value = []
   try {
-    mediaRecorder.value = new MediaRecorder(mediaStream.value, { mimeType: 'video/webm; codecs=vp9' })
+    // 优先尝试MP4格式（需要浏览器支持）
+    mediaRecorder.value = new MediaRecorder(mediaStream.value, { 
+      mimeType: 'video/mp4' 
+    })
   } catch (e) {
+    // 降级方案：使用webm格式
+    console.warn('MP4格式不支持，降级使用webm')
     mediaRecorder.value = new MediaRecorder(mediaStream.value)
   }
 
@@ -175,10 +181,15 @@ const stopRecording = () => {
     recording.value = false
 
     mediaRecorder.value.onstop = () => {
-      const blob = new Blob(recordedChunks.value, { type: 'video/webm' })
-      const file = new File([blob], `recording_${Date.now()}.webm`, {
-        type: 'video/webm'
-      });
+      
+      const mimeType = mediaRecorder.value.mimeType.includes('mp4') ? 'video/mp4' : 'video/webm'
+    
+      const blob = new Blob(recordedChunks.value, { type: mimeType })
+      const fileExtension = mimeType.split('/')[1]
+      
+      const file = new File([blob], `recording_${Date.now()}.${fileExtension}`, {
+        type: mimeType
+      })
       selectedFile.value = file
       const url = URL.createObjectURL(blob)
       recordedVideoUrl.value = url
@@ -220,7 +231,7 @@ const takePhoto = () => {
   canvas.height = video.videoHeight || 480
   const ctx = canvas.getContext('2d')
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-  const dataUrl = canvas.toDataURL('image/png')
+  const dataUrl = canvas.toDataURL('image/jpg')
   photoDataUrl.value = dataUrl
 
   //清空 video 内容，确保视频不再显示
@@ -235,8 +246,8 @@ const takePhoto = () => {
   mediaPreviewUrl.value = dataUrl
   // 生成Blob对象
   canvas.toBlob(async (blob) => {
-    const file = new File([blob], `photo_${Date.now()}.png`, {
-      type: 'image/png'
+    const file = new File([blob], `photo_${Date.now()}.jpg`, {
+      type: 'image/jpg'
     })
     // 更新状态
     selectedFile.value = file
@@ -245,7 +256,7 @@ const takePhoto = () => {
     isVideo.value = false
     videoActive.value = false
     stop()
-  }, 'image/png')
+  }, 'image/jpg')
 
 }
 
@@ -258,24 +269,24 @@ const stopCamera = async () => {
     mediaPreviewUrl.value = ''
   }
 
-  if (selectedFile.value) {
-    const formData = new FormData()
-    formData.append('file', selectedFile.value)
-    formData.append('roadId', roadId.value)
+  // if (selectedFile.value) {
+  //   const formData = new FormData()
+  //   formData.append('file', selectedFile.value)
+  //   formData.append('roadId', roadId.value)
 
-    try {
-      await axios.post('http://localhost:8000/road/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      })
-      const result = await res.json()
-      console.log('上传成功:', result)
-      alert(result)
-    } catch (err) {
-      console.error('上传失败:', err)
-    }
-  }
+  //   try {
+  //     await axios.post('http://localhost:8000/road/upload', formData, {
+  //       headers: {
+  //         'Content-Type': 'multipart/form-data'
+  //       }
+  //     })
+  //     const result = await res.json()
+  //     console.log('上传成功:', result)
+  //     alert(result)
+  //   } catch (err) {
+  //     console.error('上传失败:', err)
+  //   }
+  // }
   roadId.value = ''
   videoActive.value = false
   selectedFile.value = null
@@ -286,6 +297,10 @@ const stopCamera = async () => {
   photoDataUrl.value = ''
   recordedVideoUrl.value = ''
   recording.value = false
+  if (mediaPreviewUrl.value) {
+    URL.revokeObjectURL(mediaPreviewUrl.value)
+    mediaPreviewUrl.value = ''
+  }
 
   if (fileInput.value) fileInput.value.value = ''
 
@@ -313,6 +328,12 @@ const triggerUpload = () => {
 }
 
 const handleUpload = async e => {
+
+  if (mediaPreviewUrl.value) {
+    URL.revokeObjectURL(mediaPreviewUrl.value)
+    mediaPreviewUrl.value = ''
+  }
+
   const file = e.target.files[0]
   if (!file) return
   selectedFile.value = file
@@ -346,17 +367,21 @@ const detectIssues = async () => {
     formData.append('roadId', roadId.value)
     detectionInProgress.value = true
     try {
-      const response = await axios.post('http://localhost:8000/road/get_result', formData, {
+      const response = await axios.post('http://localhost:8000/road/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
-        }
+        },
+        withCredentials: true
       })
       result.value = {
         title: response.data.title,
         description: response.data.description,
         severity: response.data.severity,
-        position: response.data.position
+        position: response.data.position,
+        media_type: response.data.media_type,
+        media_url: response.data.media_url
       }
+      alert(result.value.media_url)
       //alert("success")
       console.log('上传成功:', result)
     } catch (err) {
@@ -374,6 +399,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopCamera()
 })
+
 </script>
 
 <style scoped>
@@ -480,5 +506,28 @@ button:disabled {
   border-radius: 6px;
   border: 1px solid #ccc;
   margin-top: 8px;
+}
+
+.result-image {
+  margin-top: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+}
+ 
+.result-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+  max-height: 300px;
+  object-fit: contain;
+}
+
+.result-media video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  margin-top: 12px;
 }
 </style>

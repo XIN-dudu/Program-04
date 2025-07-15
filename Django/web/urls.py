@@ -20,5 +20,7 @@ urlpatterns = [
     path('delete_user/', views.delete_user),
     path('points/', views.points_api),  # 新增车辆轨迹点查询接口
     path('face_verify_one_to_one/', views.face_verify_one_to_one),
+    path('logs/',views.log_list),
     path('user/profile/', views.current_user_profile),
+    path('avatar/<str:username>/', views.get_avatar),
 ]

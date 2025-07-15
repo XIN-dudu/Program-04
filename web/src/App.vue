@@ -22,8 +22,12 @@
         <div>
           <router-link to="/liveness" class="logo-text">活体检测</router-link>
         </div>
+        <div>
+          <router-link to="/log" class="logo-text">系统日志</router-link>
+        </div>
         <div class="user-section">
           <router-link v-if="isAdmin" to="/user-manage" class="logo-text" style="margin-right:18px;">用户管理</router-link>
+          <router-link v-if="isAdmin" to="/maintaince" class="logo-text" style="margin-right:18px;">维修分配</router-link>
           <router-link to="/profile" class="username clickable">{{ username }}</router-link>
           <button @click="logout" class="logout-btn">退出</button>
         </div>

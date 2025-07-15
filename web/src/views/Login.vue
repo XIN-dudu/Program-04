@@ -54,16 +54,17 @@
               <label>邮箱：</label>
               <input v-model="emailForm.email" type="email" required placeholder="请输入注册邮箱">
             </div>
-            <div class="form-group" style="display:flex;align-items:center;">
-              <label style="flex:0 0 60px;">验证码：</label>
-              <input v-model="emailForm.code" type="text" required placeholder="请输入验证码" style="flex:1;">
-              <button type="button" @click="handleSendEmailCode" style="margin-left:10px;">获取验证码</button>
+            <!-- 验证码区域：label、输入框、按钮同一行 -->
+            <div class="form-group form-group-code">
+              <label class="code-label">验证码：</label>
+              <input v-model="emailForm.code" type="text" required placeholder="请输入验证码" class="code-input">
+              <button type="button" @click="handleSendEmailCode" class="code-btn">获取验证码</button>
             </div>
             <!-- 点选验证码区域（与账号密码登录共用） -->
             <div class="form-group" v-if="captchaImg">
               <label>请依次点击下列文字：</label>
               <span style="color:#d9534f;font-weight:bold;">{{ captchaTargets.join('、') }}</span>
-              <div style="margin:10px 0;position:relative;width:320px;height:100px;border:1px solid #ccc;">
+              <div style="margin:10px 0;position:relative;width:320px;height:100px;border:1.5px solid #b6e6fa;border-radius:10px;background:#f8fafc;box-shadow:0 2px 8px rgba(30,40,90,0.04);">
                 <img :src="'data:image/png;base64,'+captchaImg" @click="handleCaptchaClick" style="width:320px;height:100px;cursor:pointer;"/>
                 <span v-for="(pt, idx) in captchaClicks" :key="'email-'+idx" :style="{position:'absolute',left:pt.x-10+'px',top:pt.y-10+'px',width:'20px',height:'20px',background:'#00a1d6',color:'#fff',borderRadius:'50%',textAlign:'center',lineHeight:'20px',fontSize:'14px',pointerEvents:'none'}">{{ idx+1 }}</span>
               </div>
@@ -73,6 +74,9 @@
               <span>登录</span>
             </button>
           </form>
+          <router-link to="/register" class="switch-link">
+            没有账号？立即注册
+          </router-link>
         </div>
       </div>
     </div>
@@ -270,13 +274,18 @@ const handleEmailLogin = async () => {
   left: 0; right: 0; top: 0; bottom: 0;
   width: 100vw;
   height: 100vh;
-  overflow-y: auto; /* 增加垂直滚动条 */
+  overflow-y: auto;
   z-index: 0;
   background: url('@/assets/login-bg.gif') center center / cover no-repeat;
-  /* 去除模糊和亮度调整 */
 }
-.bg-video {
-  display: none;
+.login-bg::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 0; bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(20, 30, 60, 0.38); /* 透明度更高 */
+  z-index: 0;
 }
 .auth-container {
   position: relative;
@@ -288,66 +297,123 @@ const handleEmailLogin = async () => {
 }
 .auth-box {
   width: 100%;
-  max-width: 440px;
-  background: rgba(255,255,255,0.85); /* 提高透明度，去除磨砂 */
-  border-radius: 24px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
-  padding: 48px 16px 32px 16px;
-  /* 去除backdrop-filter */
+  max-width: 420px;
+  background: rgba(255,255,255,0.82); /* 透明度更高 */
+  border-radius: 28px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.22);
+  padding: 48px 24px 32px 24px;
+  margin: 32px 0;
+  position: relative;
+  z-index: 2;
+  border: 2px solid #b6e6fa; /* 浅蓝色边框 */
 }
 .form-title {
   text-align: center;
-  margin-bottom: 30px;
-  color: #222;
-  font-size: 2rem;
-  font-weight: bold;
+  margin-bottom: 32px;
+  color: #1a2236;
+  font-size: 2.2rem;
+  font-weight: 800;
   letter-spacing: 2px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 .form-group label {
   display: block;
-  margin-bottom: 5px;
-  color: #666;
+  margin-bottom: 7px;
+  color: #3a466e;
+  font-weight: 600;
+  letter-spacing: 1px;
 }
 .form-group input {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 1.1rem;
-  background: rgba(255,255,255,0.9);
+  padding: 13px 14px;
+  border: 1.5px solid #b6e6fa; /* 浅蓝色边框 */
+  border-radius: 12px;
+  font-size: 1.08rem;
+  background: rgba(255,255,255,0.92); /* 透明度略提升 */
+  box-shadow: 0 2px 8px rgba(30,40,90,0.04);
+  transition: border 0.2s, box-shadow 0.2s;
 }
 .form-group input:focus {
   border-color: #00a1d6;
   outline: none;
+  box-shadow: 0 0 0 2px #b6e6fa;
 }
 .submit-btn {
   width: 100%;
-  background: #00a1d6;
+  background: linear-gradient(90deg,#00a1d6 0%,#00c6fb 100%);
   color: white;
-  padding: 14px;
+  padding: 15px 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 16px;
   cursor: pointer;
-  font-size: 1.1rem;
+  font-size: 1.18rem;
   font-weight: bold;
-  transition: background 0.2s;
-  margin-top: 10px;
+  transition: background 0.2s, box-shadow 0.2s;
+  margin-top: 12px;
+  box-shadow: 0 4px 16px rgba(0,161,214,0.10);
+  letter-spacing: 2px;
 }
 .submit-btn:hover {
-  background: #00b5e5;
+  background: linear-gradient(90deg,#00b5e5 0%,#00a1d6 100%);
+  box-shadow: 0 6px 24px rgba(0,161,214,0.18);
 }
 .switch-link {
   color: #00a1d6;
   cursor: pointer;
-  font-size: 1rem;
+  font-size: 1.01rem;
   display: block;
   text-align: center;
-  margin-top: 18px;
+  margin-top: 20px;
+  text-decoration: underline;
+  font-weight: 500;
+}
+.auth-box button {
+  border: none;
+  background: #f3f7fa;
+  color: #1a2236;
+  font-size: 1.05rem;
+  padding: 8px 22px;
+  border-radius: 12px;
+  margin-bottom: 0;
+  font-weight: 600;
+  transition: background 0.18s, color 0.18s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.auth-box button.active,
+.auth-box button:focus {
+  background: #00a1d6;
+  color: #fff;
+}
+.auth-box button:not(.active):hover {
+  background: #e6f7fd;
+  color: #00a1d6;
+}
+.form-group > div[style*='position:relative'] {
+  border-radius: 10px;
+  border: 1.5px solid #b6e6fa !important; /* 浅蓝色边框 */
+  background: #f8fafc;
+  box-shadow: 0 2px 8px rgba(30,40,90,0.04);
+}
+.form-group button[type='button'] {
+  background: #f3f7fa;
+  color: #00a1d6;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 18px;
+  font-size: 1rem;
+  margin-top: 6px;
+  margin-left: 0;
+  font-weight: 600;
+  transition: background 0.18s, color 0.18s;
+}
+.form-group button[type='button']:hover {
+  background: #e6f7fd;
+  color: #00a1d6;
 }
 .big-alert-overlay {
   position: fixed;
@@ -379,5 +445,41 @@ const handleEmailLogin = async () => {
   background: #ff0000;
   color: #fff;
   cursor: pointer;
+}
+/* 验证码输入区域横向排列 */
+.form-group-code {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.code-label {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  color: #3a466e;
+  font-weight: 600;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.code-input {
+  flex: 1 1 0;
+  margin-bottom: 0;
+}
+.code-btn {
+  background: #f3f7fa;
+  color: #00a1d6;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 18px;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: background 0.18s, color 0.18s;
+  margin-left: 0;
+  margin-bottom: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.code-btn:hover {
+  background: #e6f7fd;
+  color: #00a1d6;
 }
   </style>
