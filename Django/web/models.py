@@ -4,6 +4,7 @@ from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 import io
 import os
+import base64
 
 # Create your models here.
 
@@ -17,8 +18,30 @@ def user_face_path(instance, filename):
         username = 'unknown'
     return f'face_images/{username}/{filename}'
 
-# AES密钥（16/24/32字节），实际部署时请安全存储
+# AES密钥（16字节）
 AES_KEY = b'\x8f\x1a\x9c\x8e\x1b\x8d\x1e\x8f\x1a\x9c\x8e\x1b\x8d\x1e\x8f\x1a'  # 自动生成的16字节密钥
+
+def pad(s):
+    """填充函数"""
+    return s + (16 - len(s.encode('utf-8')) % 16) * chr(16 - len(s.encode('utf-8')) % 16)
+
+def unpad(s):
+    """去填充函数"""
+    return s[:-ord(s[len(s)-1:])]
+
+def aes_encrypt_text(text):
+    """AES加密文本"""
+    cipher = AES.new(AES_KEY, AES.MODE_ECB)
+    padded = pad(text)
+    encrypted = cipher.encrypt(padded.encode('utf-8'))
+    return base64.b64encode(encrypted).decode('utf-8')
+
+def aes_decrypt_text(enc_text):
+    """AES解密文本"""
+    cipher = AES.new(AES_KEY, AES.MODE_ECB)
+    decrypted = cipher.decrypt(base64.b64decode(enc_text))
+    return unpad(decrypted.decode('utf-8'))
+
 # AES加密
 def aes_encrypt_image(image_bytes, key):
     cipher = AES.new(key, AES.MODE_EAX)
@@ -111,3 +134,29 @@ class TrajectoryPoint(models.Model):
 
     def __str__(self):
         return f"{self.car} @ {self.time} ({self.lat}, {self.lon})"
+
+class AlertEvent(models.Model):
+    alert_time = models.DateTimeField()
+    alert_type = models.CharField(max_length=50)
+    status = models.CharField(max_length=20)
+    related_data = models.JSONField()
+    user = models.ForeignKey('UserProfile', on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        db_table = 'web_alertevent'
+
+class UserAvatar(models.Model):
+    """用户头像存储表 - 存储在云数据库中"""
+    user = models.OneToOneField(UserProfile, on_delete=models.CASCADE, related_name='db_avatar')
+    avatar_data = models.BinaryField()  # 存储头像的二进制数据
+    file_name = models.CharField(max_length=255)  # 原始文件名
+    content_type = models.CharField(max_length=100)  # 文件类型 (image/jpeg, image/png等)
+    file_size = models.IntegerField(default=0)  # 文件大小（字节），加默认值
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'web_useravatar'
+    
+    def __str__(self):
+        return f"{self.user.username}'s avatar"

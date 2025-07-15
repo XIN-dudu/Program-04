@@ -100,8 +100,9 @@ export default {
     axios.get(API_BASE + '/api/user/profile/', { withCredentials: true })
       .then(res => {
         this.user = res.data;
-        this.avatarUrl = res.data.avatar_url
-          ? (res.data.avatar_url.startsWith('http') ? res.data.avatar_url : (API_BASE + res.data.avatar_url))
+        // 头像url直接用 /api/avatar/用户名/，如果没有则用默认头像
+        this.avatarUrl = this.user.username
+          ? (API_BASE + '/api/avatar/' + this.user.username + '/')
           : require('@/assets/default-avatar.png');
         // 同步localStorage
         localStorage.setItem('user', JSON.stringify(this.user));
@@ -113,8 +114,8 @@ export default {
         let user = localStorage.getItem('user');
         if (user) {
           this.user = JSON.parse(user);
-          this.avatarUrl = this.user.avatar
-            ? (this.user.avatar.startsWith('http') ? this.user.avatar : (API_BASE + this.user.avatar))
+          this.avatarUrl = this.user.username
+            ? (API_BASE + '/api/avatar/' + this.user.username + '/')
             : require('@/assets/default-avatar.png');
           this.email = this.user.email;
           this.editNick = this.user.username;
@@ -127,7 +128,7 @@ export default {
     },
     onAvatarChange(e) {
       const file = e.target.files[0];
-      this.avatarUrl = URL.createObjectURL(file);
+      this.avatarUrl = URL.createObjectURL(file); // 本地预览
       // 上传到后端
       const formData = new FormData();
       formData.append('username', this.user.username);
@@ -137,12 +138,12 @@ export default {
       }).then(res => {
         alert(res.data.msg);
         if (res.data.avatar_url) {
-          // 自动拼接API_BASE，适配本地和生产
+          // 上传成功后，直接用 /api/avatar/用户名/ 作为头像url
           const API_BASE = process.env.VUE_APP_API_BASE || '';
-          this.avatarUrl = res.data.avatar_url.startsWith('http') ? res.data.avatar_url : (API_BASE + res.data.avatar_url);
+          this.avatarUrl = API_BASE + '/api/avatar/' + this.user.username + '/';
           // 更新localStorage中的头像字段，保证刷新/登录后头像不丢失
           let user = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : {};
-          user.avatar = res.data.avatar_url;
+          user.avatar = '/api/avatar/' + this.user.username + '/';
           localStorage.setItem('user', JSON.stringify(user));
         }
       });

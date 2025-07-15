@@ -10,7 +10,7 @@ from rest_framework.pagination import PageNumberPagination
 
 import datetime
 from web.serializers import UserSerializer,LogSerializer
-from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY, SystemLog, TrajectoryPoint
+from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY, SystemLog, AlertEvent, UserAvatar, aes_encrypt_text, aes_decrypt_text, TrajectoryPoint
 import random
 import smtplib
 from email.mime.text import MIMEText
@@ -236,9 +236,9 @@ def register(request):
     # 创建用户
     user = UserProfile(
         username=username,
-        password=password,
-        email=email,
-        phone=phone,
+        password=aes_encrypt_text(password),
+        email=aes_encrypt_text(email),
+        phone=aes_encrypt_text(phone),
         permission=permission,  # 设置用户权限
         face_image=face_images[0]  # 使用第一张图片作为主头像
     )
@@ -334,7 +334,18 @@ def login(request):
         return Response({'msg': '用户名和密码不能为空', 'reason': 'empty'}, status=status.HTTP_400_BAD_REQUEST)
     try:
         user = UserProfile.objects.get(username=username)
+        # 支持明文和加密密码
+        password_match = False
         if user.password == password:
+            password_match = True
+        else:
+            try:
+                if aes_decrypt_text(user.password) == password:
+                    password_match = True
+            except:
+                pass  # 解密失败，继续检查明文
+        
+        if password_match:
             request.session['username'] = user.username  # 登录成功写入session
             create_log(request,user,'info', '用户登入成功', f'用户名: {username}')
             return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
@@ -436,8 +447,21 @@ def email_login(request):
     if code != real_code:
         return Response({'msg': '验证码错误'}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        user = UserProfile.objects.get(email=email)
-        # 登录成功后可做session/token等处理
+        # 支持加密邮箱
+        user = None
+        for u in UserProfile.objects.all():
+            if u.email == email:
+                user = u
+                break
+            else:
+                try:
+                    if aes_decrypt_text(u.email) == email:
+                        user = u
+                        break
+                except:
+                    pass  # 解密失败，继续检查下一个用户
+        if not user:
+            return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
         request.session['username'] = user.username  # 邮箱登录成功写入session
         return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
     except UserProfile.DoesNotExist:
@@ -509,12 +533,17 @@ def face_recognition(request):
                     
                     try:
                         user = UserProfile.objects.get(id=user_id)
+                        # 尝试解密邮箱，如果失败则返回原值
+                        try:
+                            email = aes_decrypt_text(user.email)
+                        except:
+                            email = user.email
                         return Response({
                             'msg': '识别成功',
                             'user': {
                                 'id': user.id,
                                 'username': user.username,
-                                'email': user.email,
+                                'email': email,
                                 'score': score
                             }
                         })
@@ -781,7 +810,11 @@ def update_profile(request):
             if user.face_id:
                 user.face_id = user.face_id.replace(str(old_username), str(new_username))
         # 邮箱更改需要验证码校验
-        if new_email and new_email != user.email:
+        try:
+            current_email = aes_decrypt_text(user.email)
+        except:
+            current_email = user.email
+        if new_email and new_email != current_email:
             if not email_code:
                 return Response({'msg': '请输入邮箱验证码'}, status=400)
             real_code = email_code_cache.get(new_email)
@@ -790,12 +823,12 @@ def update_profile(request):
             if email_code != real_code:
                 return Response({'msg': '验证码错误'}, status=400)
             # 检查邮箱唯一性
-            if UserProfile.objects.filter(email=new_email).exclude(username=user.username).exists():
+            if UserProfile.objects.filter(email=aes_encrypt_text(new_email)).exclude(username=user.username).exists():
                 return Response({'msg': '该邮箱已被其他用户占用'}, status=400)
-            user.email = new_email
+            user.email = aes_encrypt_text(new_email)
             updated = True
         if new_password:
-            user.password = new_password
+            user.password = aes_encrypt_text(new_password)
             updated = True
         if updated:
             user.save()
@@ -837,8 +870,18 @@ def check_email_available(request):
     if not email:
         return Response({'available': False, 'msg': '邮箱不能为空'}, status=400)
     # 只要不是当前用户自己的邮箱且已被其他用户绑定就不可用
-    if UserProfile.objects.filter(email=email).exclude(username=username).exists():
-        return Response({'available': False, 'msg': '该邮箱已被其他用户绑定'}, status=200)
+    for u in UserProfile.objects.all():
+        email_match = False
+        if u.email == email:
+            email_match = True
+        else:
+            try:
+                if aes_decrypt_text(u.email) == email:
+                    email_match = True
+            except:
+                pass
+        if email_match and u.username != username:
+            return Response({'available': False, 'msg': '该邮箱已被其他用户绑定'}, status=200)
     return Response({'available': True, 'msg': '邮箱可用'}, status=200)
 
 @api_view(['GET'])
@@ -860,15 +903,18 @@ def user_list(request):
     except UserProfile.DoesNotExist:
         return JsonResponse({'msg': '用户不存在'}, status=404)
     users = UserProfile.objects.all()
-    data = [
-        {
+    data = []
+    for user in users:
+        try:
+            email = aes_decrypt_text(user.email)
+        except:
+            email = user.email
+        data.append({
             'id': user.id,
             'username': user.username,
-            'email': user.email,
+            'email': email,
             'permission': user.permission
-        }
-        for user in users
-    ]
+        })
     return JsonResponse({'users': data})
 
 @api_view(['POST'])
@@ -1039,32 +1085,62 @@ def face_verify_one_to_one(request):
 def upload_avatar(request):
     """
     用户头像上传接口。
-
-    POST参数：
-        - username (string, 必填): 用户名
-        - avatar (file, 必填): 头像图片
-    返回：
-        - msg (string): 上传结果
-        - avatar_url (string): 头像URL
     """
+    import sys
+    print("[upload_avatar] 接口被调用", file=sys.stderr)
     username = request.data.get('username')
+    print(f"[upload_avatar] username: {username}", file=sys.stderr)
     if not username:
+        print("[upload_avatar] 用户名不能为空", file=sys.stderr)
         return Response({'msg': '用户名不能为空'}, status=400)
     try:
         user = UserProfile.objects.get(username=username)
+        print(f"[upload_avatar] user对象: {user}", file=sys.stderr)
         avatar = request.FILES.get('avatar')
+        print(f"[upload_avatar] avatar: {avatar}", file=sys.stderr)
         if not avatar:
+            print("[upload_avatar] 没有上传头像文件", file=sys.stderr)
             return Response({'msg': '请上传头像文件'}, status=400)
-        user.avatar = avatar
-        user.save()
-        # 保证返回/media/avatars/xxx.jpg格式
-        avatar_url = user.avatar.url
-        if not avatar_url.startswith('/media/'):
-            avatar_url = '/media/' + user.avatar.name
-        return Response({'msg': '头像上传成功', 'avatar_url': avatar_url})
+        avatar_data = avatar.read()
+        print(f"[upload_avatar] avatar_data长度: {len(avatar_data) if avatar_data else 0}", file=sys.stderr)
+        if not avatar_data:
+            print("[upload_avatar] 头像文件为空或读取失败", file=sys.stderr)
+            return Response({'msg': '头像文件为空或读取失败'}, status=400)
+        file_size = len(avatar_data)
+        print(f"[upload_avatar] file_size: {file_size}", file=sys.stderr)
+        if file_size <= 0:
+            print("[upload_avatar] 头像文件大小异常", file=sys.stderr)
+            return Response({'msg': '头像文件大小异常'}, status=400)
+        if file_size > 5 * 1024 * 1024:
+            print("[upload_avatar] 头像文件过大", file=sys.stderr)
+            return Response({'msg': '头像文件过大，请选择小于5MB的图片'}, status=400)
+        file_name = avatar.name or f'avatar_{user.username}.jpg'
+        content_type = avatar.content_type or 'image/jpeg'
+        print(f"[upload_avatar] file_name: {file_name}, content_type: {content_type}", file=sys.stderr)
+        try:
+            user_avatar, created = UserAvatar.objects.get_or_create(user=user)
+            user_avatar.avatar_data = avatar_data
+            user_avatar.file_name = file_name
+            user_avatar.content_type = content_type
+            user_avatar.file_size = file_size
+            user_avatar.save()
+            print(f"[upload_avatar] 头像保存成功, created={created}", file=sys.stderr)
+        except Exception as e:
+            print(f"[upload_avatar] 保存头像失败: {str(e)}", file=sys.stderr)
+            return Response({'msg': f'保存头像失败: {str(e)}'}, status=500)
+        avatar_url = f'/api/avatar/{user.username}/'
+        print(f"[upload_avatar] 返回avatar_url: {avatar_url}", file=sys.stderr)
+        return Response({
+            'msg': '头像上传成功（数据库存储）', 
+            'avatar_url': avatar_url
+        })
     except UserProfile.DoesNotExist:
+        print("[upload_avatar] 用户不存在", file=sys.stderr)
         return Response({'msg': '用户不存在'}, status=404)
-    
+    except Exception as e:
+        print(f"[upload_avatar] 其他异常: {str(e)}", file=sys.stderr)
+        return Response({'msg': f'未知错误: {str(e)}'}, status=500)
+
 def get_client_ip(request):
     """获取客户端真实IP"""
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -1162,13 +1238,60 @@ def current_user_profile(request):
         return Response({'msg': '未登录'}, status=401)
     try:
         user = UserProfile.objects.get(username=username)
+        # 尝试解密，如果失败则返回原值（兼容明文存储）
+        try:
+            email = aes_decrypt_text(user.email)
+        except:
+            email = user.email
+        try:
+            phone = aes_decrypt_text(user.phone)
+        except:
+            phone = user.phone
+        # 优先返回数据库存储的头像URL，如果没有则返回本地头像URL
+        avatar_url = None
+        try:
+            user_avatar = UserAvatar.objects.get(user=user)
+            avatar_url = f'/api/avatar/{user.username}/'
+        except UserAvatar.DoesNotExist:
+            if user.avatar:
+                avatar_url = user.avatar.url
+        
         data = {
             'username': user.username,
-            'email': user.email,
-            'phone': user.phone,
+            'email': email,
+            'phone': phone,
             'permission': user.permission,
-            'avatar_url': user.avatar.url if user.avatar else None
+            'avatar_url': avatar_url
         }
         return Response(data)
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=404)
+
+@api_view(['GET'])
+def get_avatar(request, username):
+    """
+    获取用户头像接口。
+    GET参数：
+        - username (string, 路径参数, 必填): 用户名
+    返回：
+        - 头像图片文件
+    """
+    from django.http import HttpResponse, FileResponse
+    import os
+    try:
+        user = UserProfile.objects.get(username=username)
+        try:
+            user_avatar = UserAvatar.objects.get(user=user)
+            # 返回数据库头像
+            response = HttpResponse(user_avatar.avatar_data, content_type=user_avatar.content_type)
+            response['Content-Disposition'] = f'inline; filename="{user_avatar.file_name}"'
+            return response
+        except UserAvatar.DoesNotExist:
+            # 返回默认头像
+            default_path = os.path.join(os.path.dirname(__file__), '../web/assets/default-avatar.png')
+            if os.path.exists(default_path):
+                return FileResponse(open(default_path, 'rb'), content_type='image/png')
+            else:
+                return HttpResponse('头像不存在', status=404)
+    except UserProfile.DoesNotExist:
+        return HttpResponse('用户不存在', status=404)
