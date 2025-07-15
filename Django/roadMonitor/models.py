@@ -31,10 +31,12 @@ class roadRecord(models.Model):
     road_id = models.IntegerField(null=False)
     detection_time = models.DateTimeField(auto_now_add=True)
     DISEASE_TYPE_CHOICES = [
+        (0, '无'),
         (1, '纵向裂缝'),
         (2, '横向裂缝'),
         (3, '龟裂'),
         (4, '坑洼'),
+        (5, '修补')
     ]
     disease_type = models.IntegerField(choices=DISEASE_TYPE_CHOICES, null=False, blank=False)
     length = models.FloatField()
