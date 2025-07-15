@@ -81,27 +81,41 @@ export default {
           head: item.head // 方向角度
         }));
         if (points.length > 0) {
-          this.polyline = new window.BMap.Polyline(points.map(p => p.point), {strokeColor:"#0288d1", strokeWeight:5, strokeOpacity:0.8});
+          // 轨迹线为绿色
+          this.polyline = new window.BMap.Polyline(points.map(p => p.point), {
+            strokeColor: "#43a047", // 好看的绿色
+            strokeWeight: 7,
+            strokeOpacity: 0.85
+          });
           this.map.addOverlay(this.polyline);
           this.map.setViewport(points.map(p => p.point));
-          // 给每个点加一个旋转箭头
-          points.forEach(p => {
+
+          // 沿轨迹每隔一定距离密集分布小箭头marker，方向与轨迹一致
+          const arrowStep = 5; // 每隔5个点画一个箭头
+          for (let i = 0; i < points.length - 1; i += arrowStep) {
+            const p = points[i];
+            const next = points[i + 1] || points[i];
+            // 计算方向角
+            const dx = next.point.lng - p.point.lng;
+            const dy = next.point.lat - p.point.lat;
+            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+            // 画自定义小箭头
             const arrow = new window.BMap.Marker(
               p.point,
               {
-                icon: new window.BMap.Symbol("M0,-10 L6,10 L0,5 L-6,10 Z", {
+                icon: new window.BMap.Symbol("M0,0 L10,0 L5,10 Z", {
                   scale: 1.2,
-                  strokeColor: "#0288d1",
+                  strokeColor: "#fff",
                   strokeWeight: 2,
-                  rotation: p.head || 0, // 直接用head
-                  fillColor: "#0288d1",
-                  fillOpacity: 0.9
+                  rotation: angle,
+                  fillColor: "#fff",
+                  fillOpacity: 1
                 })
               }
             );
             this.map.addOverlay(arrow);
             this.arrowMarkers.push(arrow);
-          });
+          }
         }
       } catch (e) {
         console.error('轨迹查询失败', e);

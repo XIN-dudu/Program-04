@@ -10,7 +10,7 @@ from rest_framework.pagination import PageNumberPagination
 
 import datetime
 from web.serializers import UserSerializer,LogSerializer
-from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY, SystemLog, AlertEvent
+from .models import UserProfile, UserFaceImage, aes_decrypt_image, AES_KEY, SystemLog, TrajectoryPoint
 import random
 import smtplib
 from email.mime.text import MIMEText
@@ -29,6 +29,7 @@ import numpy as np  # 在文件顶部加上
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework import serializers
+from django.db import connection
 
 # 简单内存验证码存储（生产建议用redis等）
 email_code_cache = {}
@@ -186,8 +187,6 @@ class RegisterSerializer(serializers.Serializer):
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def register(request):
-    import os
-    print('=== REGISTER接口被调用 ===', __file__, os.getcwd())
     """
     用户注册接口。
 
@@ -234,7 +233,7 @@ def register(request):
     if len(face_images) < 3:
         return Response({'msg': '请上传至少三张人脸图片'}, status=status.HTTP_400_BAD_REQUEST)
     
-    # 创建用户（加密密码、邮箱、手机号）
+    # 创建用户
     user = UserProfile(
         username=username,
         password=password,
@@ -335,7 +334,6 @@ def login(request):
         return Response({'msg': '用户名和密码不能为空', 'reason': 'empty'}, status=status.HTTP_400_BAD_REQUEST)
     try:
         user = UserProfile.objects.get(username=username)
-        # 支持明文和加密密码
         if user.password == password:
             request.session['username'] = user.username  # 登录成功写入session
             create_log(request,user,'info', '用户登入成功', f'用户名: {username}')
@@ -438,17 +436,11 @@ def email_login(request):
     if code != real_code:
         return Response({'msg': '验证码错误'}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        # 支持加密邮箱
-        user = None
-        for u in UserProfile.objects.all():
-            if u.email == email:
-                user = u
-                break
-        if not user:
-            return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
+        user = UserProfile.objects.get(email=email)
+        # 登录成功后可做session/token等处理
         request.session['username'] = user.username  # 邮箱登录成功写入session
         return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
-    except Exception:
+    except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
     
 # 人脸识别接口
@@ -482,15 +474,6 @@ def face_recognition(request):
     token = get_baidu_token()
     if not token:
         os.unlink(temp_path)  # 删除临时文件
-        # 产生告警和日志
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'baidu_token_failed'}
-        )
-        create_log(request, None, 'warning', '人脸识别失败', '无法获取百度token', alert_event=alert)
         return Response({'msg': '人脸识别服务暂不可用'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     
     url = f"https://aip.baidubce.com/rest/2.0/face/v3/search?access_token={token}"
@@ -522,15 +505,6 @@ def face_recognition(request):
                     
                     # 阈值验证，小于80分不可信
                     if score < 80:
-                        # 置信度低，告警
-                        alert = AlertEvent.objects.create(
-                            alert_time=timezone.now(),
-                            user=None,
-                            alert_type='face_fail',
-                            status='pending',
-                            related_data={'reason': 'score_low', 'score': score}
-                        )
-                        create_log(request, None, 'warning', '人脸识别失败', f'置信度过低: {score}', alert_event=alert)
                         return Response({'msg': '无法确认身份，请靠近摄像头重试'}, status=status.HTTP_400_BAD_REQUEST)
                     
                     try:
@@ -545,48 +519,12 @@ def face_recognition(request):
                             }
                         })
                     except UserProfile.DoesNotExist:
-                        # 识别到的用户ID不存在，告警
-                        alert = AlertEvent.objects.create(
-                            alert_time=timezone.now(),
-                            user=None,
-                            alert_type='face_fail',
-                            status='pending',
-                            related_data={'reason': 'user_not_found', 'user_id': user_id}
-                        )
-                        create_log(request, None, 'warning', '人脸识别失败', f'识别到的用户ID不存在: {user_id}', alert_event=alert)
                         return Response({'msg': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
                 else:
-                    # 未识别到用户，告警
-                    alert = AlertEvent.objects.create(
-                        alert_time=timezone.now(),
-                        user=None,
-                        alert_type='face_fail',
-                        status='pending',
-                        related_data={'reason': 'no_user'}
-                    )
-                    create_log(request, None, 'warning', '人脸识别失败', '未识别到已知用户', alert_event=alert)
                     return Response({'msg': '未识别到已知用户'}, status=status.HTTP_404_NOT_FOUND)
             else:
-                # API报错，告警
-                alert = AlertEvent.objects.create(
-                    alert_time=timezone.now(),
-                    user=None,
-                    alert_type='face_fail',
-                    status='pending',
-                    related_data={'reason': 'api_error', 'error_msg': result.get('error_msg')}
-                )
-                create_log(request, None, 'warning', '人脸识别失败', f"API错误: {result.get('error_msg')}", alert_event=alert)
                 return Response({'msg': f"识别失败: {result.get('error_msg')}"}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        # 识别过程异常，告警
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'exception', 'error': str(e)}
-        )
-        create_log(request, None, 'warning', '人脸识别失败', f'识别过程出错: {str(e)}', alert_event=alert)
         return Response({'msg': f'识别过程出错: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     return Response({'msg': '未知错误'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -608,29 +546,12 @@ def liveness_detection(request):
     """
     """活体检测+1对N识别接口，接收图片，调用百度V3接口"""
     if 'image' not in request.FILES:
-        # 新增日志
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'no_image'}
-        )
-        create_log(request, None, 'warning', '活体检测失败', '未上传图片', alert_event=alert)
         return Response({'msg': '请上传图片'}, status=status.HTTP_400_BAD_REQUEST)
     image = request.FILES['image']
     import base64
     image_base64 = base64.b64encode(image.read()).decode('utf-8')
     token = get_baidu_token()
     if not token:
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'baidu_token_failed'}
-        )
-        create_log(request, None, 'warning', '活体检测失败', '无法获取百度token', alert_event=alert)
         return Response({'msg': '服务暂不可用'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     url = f"https://aip.baidubce.com/rest/2.0/face/v3/search?access_token={token}"
     data = {
@@ -667,37 +588,10 @@ def liveness_detection(request):
                     'liveness': liveness
                 })
             else:
-                # 新增日志
-                alert = AlertEvent.objects.create(
-                    alert_time=timezone.now(),
-                    user=None,
-                    alert_type='face_fail',
-                    status='pending',
-                    related_data={'reason': 'no_user'}
-                )
-                create_log(request, None, 'warning', '活体检测失败', '未识别到已知用户', alert_event=alert)
                 return Response({'msg': '未识别到已知用户', 'liveness': liveness})
         else:
-            # 新增日志
-            alert = AlertEvent.objects.create(
-                alert_time=timezone.now(),
-                user=None,
-                alert_type='face_fail',
-                status='pending',
-                related_data={'reason': 'api_error', 'error_msg': result.get('error_msg')}
-            )
-            create_log(request, None, 'warning', '活体检测失败', f"API错误: {result.get('error_msg')}", alert_event=alert)
             return Response({'msg': f"识别失败: {result.get('error_msg')}", 'liveness': False})
     except Exception as e:
-        # 新增日志
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'exception', 'error': str(e)}
-        )
-        create_log(request, None, 'warning', '活体检测失败', f'检测过程出错: {str(e)}', alert_event=alert)
         return Response({'msg': f'检测过程出错: {str(e)}', 'liveness': False})
 
 @api_view(['POST'])
@@ -716,14 +610,6 @@ def liveness_check(request):
     """
     """活体检测接口，接收视频，调用百度H5 API"""
     if 'video' not in request.FILES:
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'no_video'}
-        )
-        create_log(request, None, 'warning', '活体检测失败', '未上传视频', alert_event=alert)
         return Response({'msg': '请上传视频', 'raw': None}, status=status.HTTP_400_BAD_REQUEST)
     video = request.FILES['video']
     import tempfile
@@ -737,14 +623,6 @@ def liveness_check(request):
     token = get_baidu_token()
     if not token:
         os.unlink(temp_path)
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'baidu_token_failed'}
-        )
-        create_log(request, None, 'warning', '活体检测失败', '无法获取百度token', alert_event=alert)
         return Response({'msg': '活体检测服务暂不可用', 'raw': None}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     url = f"https://aip.baidubce.com/rest/2.0/face/v1/faceliveness/verify?access_token={token}"
     data = {
@@ -757,47 +635,15 @@ def liveness_check(request):
         try:
             result = response.json()
         except Exception as e:
-            alert = AlertEvent.objects.create(
-                alert_time=timezone.now(),
-                user=None,
-                alert_type='face_fail',
-                status='pending',
-                related_data={'reason': 'json_parse_error', 'error': str(e)}
-            )
-            create_log(request, None, 'warning', '活体检测失败', f'API返回内容无法解析为JSON: {str(e)}', alert_event=alert)
             return Response({'liveness': False, 'msg': f'API返回内容无法解析为JSON: {str(e)}', 'raw': response.text})
         if not isinstance(result, dict):
-            alert = AlertEvent.objects.create(
-                alert_time=timezone.now(),
-                user=None,
-                alert_type='face_fail',
-                status='pending',
-                related_data={'reason': 'not_dict', 'raw': str(result)}
-            )
-            create_log(request, None, 'warning', '活体检测失败', 'API返回内容不是字典', alert_event=alert)
             return Response({'liveness': False, 'msg': 'API返回内容不是字典', 'raw': str(result)})
         if result.get('error_code') == 0 and result.get('result', {}).get('score', 0) > 0.8:
             return Response({'liveness': True, 'msg': '活体检测通过', 'raw': result})
         else:
             score = result.get('result', {}).get('score', 0) if result.get('result') else 0
-            alert = AlertEvent.objects.create(
-                alert_time=timezone.now(),
-                user=None,
-                alert_type='face_fail',
-                status='pending',
-                related_data={'reason': 'score_low', 'score': score, 'raw': result}
-            )
-            create_log(request, None, 'warning', '活体检测失败', f'活体检测未通过，分数：{score:.2f}', alert_event=alert)
             return Response({'liveness': False, 'msg': f"活体检测未通过，分数：{score:.2f}", 'raw': result})
     except Exception as e:
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'exception', 'error': str(e)}
-        )
-        create_log(request, None, 'warning', '活体检测失败', f'检测过程出错: {str(e)}', alert_event=alert)
         return Response({'liveness': False, 'msg': f'检测过程出错: {str(e)}', 'raw': None})
 
 @api_view(['GET'])
@@ -991,9 +837,8 @@ def check_email_available(request):
     if not email:
         return Response({'available': False, 'msg': '邮箱不能为空'}, status=400)
     # 只要不是当前用户自己的邮箱且已被其他用户绑定就不可用
-    for u in UserProfile.objects.all():
-        if (u.email == email) and u.username != username:
-            return Response({'available': False, 'msg': '该邮箱已被其他用户绑定'}, status=200)
+    if UserProfile.objects.filter(email=email).exclude(username=username).exists():
+        return Response({'available': False, 'msg': '该邮箱已被其他用户绑定'}, status=200)
     return Response({'available': True, 'msg': '邮箱可用'}, status=200)
 
 @api_view(['GET'])
@@ -1104,65 +949,41 @@ def update_permission(request):
 
 @api_view(['GET'])
 def points_api(request):
-    """
-    轨迹点数据接口。
-
-    GET参数：
-        - start (string, 可选): 起始时间
-        - end (string, 可选): 结束时间
-        - car (string, 可选): 车辆编号
-        - limit (int, 可选): 返回条数
-    返回：
-        - 轨迹点数据列表（含lat, lon, time, car, head, tflag, status）
-    """
-    """
-    GET /api/points/?start=2013/9/12 0:00&end=2013/9/12 1:00&car=15053112970&limit=1000
-    只读取前2万行，按参数筛选，返回前limit条。
-    """
     start = request.GET.get('start')
     end = request.GET.get('end')
     car = request.GET.get('car')
-    limit = int(request.GET.get('limit', 1))
-    file_path = r'C:/Users/27448/Desktop/jn0912_baidu_coords.csv'
-    # 只读取前2万行
-    df = pd.read_csv(file_path, nrows=20000)
-    df.columns = [c.strip() for c in df.columns]
-    # 时间字段转为datetime
-    df['UTC'] = pd.to_datetime(df['UTC'])
-    if start:
-        start_dt = pd.to_datetime(start)
-        df = df[df['UTC'] >= start_dt]
-    if end:
-        end_dt = pd.to_datetime(end)
-        df = df[df['UTC'] <= end_dt]
-    if car:
-        df = df[df['COMMADDR'].astype(str) == str(car)]
-    # 加入HEAD字段
-    result = df[['LAT', 'LON', 'UTC', 'COMMADDR', 'HEAD', 'TFLAG', 'status']]
+    limit = int(request.GET.get('limit', 200))
+    table = 'jn0912_baidu_coords'
 
-    if not car:
-        # 如果car为空，自动从CSV中随机选取一个COMMADDR
-        unique_cars = result['COMMADDR'].unique()
-        if len(unique_cars) > 0:
-            car = str(np.random.choice(unique_cars, 1)[0])
-            result = result[result['COMMADDR'].astype(str) == car]
-        else:
-            result = result.head(limit)
-    else:
-        # 有车牌号时，取前 limit 条，保持轨迹连贯
-        result = result[result['COMMADDR'].astype(str) == str(car)].head(limit)
+    sql = f"SELECT LAT, LON, UTC, COMMADDR, HEAD, TFLAG, status FROM {table} WHERE 1=1"
+    params = []
+    if start:
+        sql += " AND UTC >= %s"
+        params.append(start)
+    if end:
+        sql += " AND UTC <= %s"
+        params.append(end)
+    if car:
+        sql += " AND COMMADDR = %s"
+        params.append(car)
+    sql += " ORDER BY UTC LIMIT %s"
+    params.append(limit)
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
 
     data = [
         {
-            'lat': row['LAT'],
-            'lon': row['LON'],
-            'time': row['UTC'],
-            'car': row['COMMADDR'],
-            'head': row['HEAD'],
-            'tflag': row['TFLAG'],
-            'status': row['status']
+            'lat': row[0],
+            'lon': row[1],
+            'time': row[2],
+            'car': row[3],
+            'head': row[4],
+            'tflag': row[5],
+            'status': row[6]
         }
-        for _, row in result.iterrows()
+        for row in rows
     ]
     return Response(data)
     
@@ -1178,53 +999,23 @@ def face_verify_one_to_one(request):
         - msg (string): 比对结果
         - score (float): 相似度分数
     """
+    """1:1人脸比对接口：当前用户主头像face_token vs 现场图片base64"""
     username = request.data.get('username') or request.session.get('username')
     if not username:
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'not_logged_in'}
-        )
-        create_log(request, None, 'warning', '1:1人脸比对失败', '未登录，无法比对', alert_event=alert)
         return Response({'msg': '未登录，无法比对'}, status=401)
     try:
         user = UserProfile.objects.get(username=username)
     except UserProfile.DoesNotExist:
-        # 用户不存在，告警
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=None,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'user_not_found', 'username': username}
-        )
-        create_log(request, None, 'warning', '1:1人脸比对失败', f'用户不存在: {username}', alert_event=alert)
         return Response({'msg': '用户不存在'}, status=404)
+    # 获取主头像face_token
     main_face = user.face_images.first()  # 取第一张人脸图片
     if not main_face or not main_face.face_token:
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=user,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'no_face_token'}
-        )
-        create_log(request, user, 'warning', '1:1人脸比对失败', '用户主头像未同步到百度云或未注册face_token', alert_event=alert)
         return Response({'msg': '用户主头像未同步到百度云或未注册face_token'}, status=400)
     if 'image' not in request.FILES:
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=user,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'no_image'}
-        )
-        create_log(request, user, 'warning', '1:1人脸比对失败', '未上传现场图片', alert_event=alert)
         return Response({'msg': '请上传现场图片'}, status=400)
     img2 = request.FILES['image']
     img2_base64 = base64.b64encode(img2.read()).decode()
+    # 用face_token和base64做比对
     url = f"https://aip.baidubce.com/rest/2.0/face/v3/match?access_token={get_baidu_token()}"
     headers = {'Content-Type': 'application/json'}
     data = [
@@ -1237,39 +1028,10 @@ def face_verify_one_to_one(request):
         if result.get('error_code') == 0:
             score = result['result']['score']
             passed = score >= 80
-            if passed:
-                create_log(request, user, 'info', '1:1人脸比对成功', f'置信度: {score}')
-            else:
-                alert = AlertEvent.objects.create(
-                    alert_time=timezone.now(),
-                    user=user,
-                    alert_type='face_fail',
-                    status='pending',
-                    related_data={'reason': 'score_low', 'score': score}
-                )
-                create_log(request, user, 'warning', '1:1人脸比对失败', f'置信度过低: {score}', alert_event=alert)
             return Response({'msg': '比对成功', 'score': score, 'passed': passed})
         else:
-            # API报错，告警
-            alert = AlertEvent.objects.create(
-                alert_time=timezone.now(),
-                user=user,
-                alert_type='face_fail',
-                status='pending',
-                related_data={'reason': 'api_error', 'error_msg': result.get('error_msg')}
-            )
-            create_log(request, user, 'warning', '1:1人脸比对失败', f"API错误: {result.get('error_msg')}", alert_event=alert)
             return Response({'msg': f"比对失败: {result.get('error_msg')}", 'raw': result}, status=400)
     except Exception as e:
-        # 比对过程异常，告警
-        alert = AlertEvent.objects.create(
-            alert_time=timezone.now(),
-            user=user,
-            alert_type='face_fail',
-            status='pending',
-            related_data={'reason': 'exception', 'error': str(e)}
-        )
-        create_log(request, user, 'warning', '1:1人脸比对失败', f'比对过程出错: {str(e)}', alert_event=alert)
         return Response({'msg': f'比对过程出错: {str(e)}'}, status=500)
     
 @api_view(['POST'])
@@ -1308,8 +1070,8 @@ def get_client_ip(request):
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
     return x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
 
-def create_log(request,user, level, action, details, alert_event=None):
-    """创建新日志条目，支持告警事件外键"""
+def create_log(request,user, level, action, details):
+    """创建新日志条目"""
     
     # 自动获取客户端IP
     ip = get_client_ip(request)
@@ -1320,8 +1082,7 @@ def create_log(request,user, level, action, details, alert_event=None):
         action=action,
         details=details,
         ip_address=ip,
-        timestamp=timezone.now(),
-        alert_event=alert_event
+        timestamp=timezone.now()
     )
     # if log.is_valid():
     log.save()
@@ -1384,6 +1145,18 @@ def log_list(request):
 
 @api_view(['GET'])
 def current_user_profile(request):
+    """
+    获取当前登录用户信息。
+
+    GET参数：
+        - username (string, 可选): 用户名（用于session或GET）
+    返回：
+        - username (string): 用户名
+        - email (string): 邮箱
+        - phone (string): 手机号
+        - permission (int): 权限
+        - avatar_url (string): 头像URL
+    """
     username = request.session.get('username') or request.GET.get('username')
     if not username:
         return Response({'msg': '未登录'}, status=401)
