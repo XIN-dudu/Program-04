@@ -1296,3 +1296,17 @@ def get_avatar(request, username):
                 return HttpResponse('头像不存在', status=404)
     except UserProfile.DoesNotExist:
         return HttpResponse('用户不存在', status=404)
+
+@api_view(['GET'])
+def car_list(request):
+    """
+    获取所有车辆的车牌号列表（直接查jn0912_baidu_coords表）
+    """
+    table = 'jn0912_baidu_coords'
+    sql = f"SELECT DISTINCT COMMADDR FROM {table}"
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+    cars = [row[0] for row in rows]
+    return JsonResponse(cars, safe=False)

@@ -31,7 +31,17 @@
           <label>车牌标识：</label>
           <input v-model="carId" placeholder="请输入车牌号" />
         </div>
-        <button @click="queryByCar" class="long-btn" :disabled="!carId">查询</button>
+        <div style="position:relative;">
+          <button
+            @click="queryByCar"
+            class="long-btn"
+            :disabled="!carId"
+            @mouseenter="showCarIdTip = !carId"
+            @mouseleave="showCarIdTip = false"
+            ref="carBtn"
+          >查询</button>
+          <div v-if="showCarIdTip" class="btn-tooltip">请输入车牌号</div>
+        </div>
       </div>
     </div>
     <div class="right-panel">
@@ -41,6 +51,15 @@
 </template>
 
 <script>
+// 若未引入Element UI，可用window.alert替代
+let showMsg = (msg) => { window.alert(msg); };
+try {
+  // 尝试Element UI
+  if (window.ELEMENT && window.ELEMENT.Message) {
+    showMsg = (msg) => window.ELEMENT.Message({ message: msg, type: 'warning' });
+  }
+} catch(e) {}
+
 export default {
   name: "Trajectory",
   data() {
@@ -60,6 +79,7 @@ export default {
       endMarker: null,
       arrowMarkers: [],
       infoMarkers: [],
+      showCarIdTip: false,
     };
   },
   mounted() {
@@ -88,16 +108,38 @@ export default {
       if (this.timeEnd) params.push(`end=${encodeURIComponent(this.formatTime(this.timeEnd))}`);
       if (this.timeLimit) params.push(`limit=${this.timeLimit}`);
       const url = `/api/points/?${params.join('&')}`;
-      await this.renderPoints(url, false);
+      const found = await this.renderPoints(url, false);
+      if (found === false) {
+        showMsg('指定日期范围内没有记录！');
+      }
     },
     async queryByCar() {
       if (!this.map) return;
+      if (!this.carId) return;
+      // 先查车牌号是否存在
+      let carExist = false;
+      try {
+        // 假设有/api/cars/接口返回所有车牌号列表（如无请替换为实际接口）
+        const res = await fetch('/api/cars/');
+        const carList = await res.json();
+        carExist = Array.isArray(carList) && carList.includes(this.carId);
+      } catch(e) {
+        // 如果接口失败，默认允许查（不拦截）
+        carExist = true;
+      }
+      if (!carExist) {
+        showMsg('找不到指定车牌号！');
+        return;
+      }
       let params = [];
       if (this.carStart) params.push(`start=${encodeURIComponent(this.formatTime(this.carStart))}`);
       if (this.carEnd) params.push(`end=${encodeURIComponent(this.formatTime(this.carEnd))}`);
       if (this.carId) params.push(`car=${encodeURIComponent(this.carId)}`);
       const url = `/api/points/?${params.join('&')}`;
-      await this.renderPoints(url, true);
+      const found = await this.renderPoints(url, true);
+      if (found === false) {
+        showMsg('该车牌号在指定日期范围内没有记录！');
+      }
     },
     async renderPoints(url, isCarMode) {
       try {
@@ -112,6 +154,9 @@ export default {
           status: item.status,
           speed: item.SPEED !== undefined ? item.SPEED : item.speed
         }));
+        if (!points.length) {
+          return false;
+        }
         // 清除旧的marker
         if (this.polyline) {
           this.map.removeOverlay(this.polyline);
@@ -205,8 +250,11 @@ export default {
             this.infoMarkers.push(marker);
           });
         }
+        return true;
       } catch (e) {
         console.error('轨迹查询失败', e);
+        showMsg('查询失败，请检查网络或稍后重试！');
+        return false;
       }
     }
   }
@@ -310,5 +358,21 @@ export default {
   background: #fff;
   border: 1px solid #e3f2fd;
   margin-bottom: 12px;
+}
+.btn-tooltip {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  background: #fffbe6;
+  color: #d48806;
+  border: 1px solid #ffe58f;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-size: 14px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  margin-top: 6px;
+  z-index: 10;
 }
 </style> 

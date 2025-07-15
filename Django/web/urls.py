@@ -23,4 +23,5 @@ urlpatterns = [
     path('logs/',views.log_list),
     path('user/profile/', views.current_user_profile),
     path('avatar/<str:username>/', views.get_avatar),
+    path('cars/', views.car_list),
 ]
