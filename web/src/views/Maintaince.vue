@@ -57,7 +57,7 @@ const errorMsg = ref('')
 // 加载病害任务
 async function loadTasks() {
   try {
-    const res = await axios.get('http://localhost:8000/history/list')
+    const res = await axios.get('http://localhost:8000/api/history/list')
     // 只添加 assigned_person_id 字段用于选择维修工
     tasks.value = res.data.map(item => ({
       ...item,

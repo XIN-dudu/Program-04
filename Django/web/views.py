@@ -922,30 +922,25 @@ def user_list(request):
 def delete_user(request):
     """
     删除用户接口（管理员权限）。
+
+    POST参数：
+        - username (string, 必填): 管理员用户名
+        - user_id (int, 必填): 目标用户ID
+    返回：
+        - msg (string): 删除结果
     """
-    import sys
-    from .models import UserAvatar
-    print("[delete_user] 接口被调用", file=sys.stderr)
     username = request.data.get('username') or request.session.get('username')
-    print(f"[delete_user] 管理员用户名: {username}", file=sys.stderr)
     try:
         user = UserProfile.objects.get(username=username)
-        print(f"[delete_user] 管理员user对象: {user}", file=sys.stderr)
         if user.permission != 2:
-            print("[delete_user] 无权限", file=sys.stderr)
             return JsonResponse({'msg': '无权限'}, status=403)
     except UserProfile.DoesNotExist:
-        print("[delete_user] 管理员用户不存在", file=sys.stderr)
         return JsonResponse({'msg': '用户不存在'}, status=404)
     user_id = request.data.get('user_id')
-    print(f"[delete_user] 目标用户ID: {user_id}", file=sys.stderr)
     try:
         del_user = UserProfile.objects.get(id=user_id)
-        print(f"[delete_user] 目标用户对象: {del_user}", file=sys.stderr)
         # 先删除百度云人脸库信息
-        baidu_error = None
         token = get_baidu_token()
-        print(f"[delete_user] 百度token: {token}", file=sys.stderr)
         if token:
             url = f"https://aip.baidubce.com/rest/2.0/face/v3/faceset/user/delete?access_token={token}"
             data = {
@@ -955,32 +950,15 @@ def delete_user(request):
             headers = {'Content-Type': 'application/json'}
             try:
                 resp = requests.post(url, data=json.dumps(data), headers=headers)
-                print("[delete_user] 百度人脸库删除返回：", resp.text, file=sys.stderr)
+                print("百度人脸库删除返回：", resp.text)
             except Exception as e:
-                baidu_error = str(e)
-                print(f"[delete_user] 调用百度云删除用户失败: {e}", file=sys.stderr)
-        # 先删除用户头像（UserAvatar表）
-        try:
-            deleted_avatar_count = UserAvatar.objects.filter(user=del_user).delete()
-            print(f"[delete_user] 删除UserAvatar记录数: {deleted_avatar_count}", file=sys.stderr)
-        except Exception as e:
-            print(f"[delete_user] 删除UserAvatar异常: {str(e)}", file=sys.stderr)
+                print(f"调用百度云删除用户失败: {e}")
         # 本地删除用户及人脸记录
-        try:
-            del_user.delete()  # 级联删除UserFaceImage
-            print("[delete_user] 用户及人脸记录已删除", file=sys.stderr)
-        except Exception as e:
-            print(f"[delete_user] 删除UserProfile异常: {str(e)}", file=sys.stderr)
-            return JsonResponse({'msg': f'删除用户失败: {str(e)}'}, status=500)
-        msg = '用户及人脸记录已删除（含百度云）'
-        if baidu_error:
-            msg += f'，但百度云人脸库删除失败：{baidu_error}，请检查网络或稍后重试。'
-        return JsonResponse({'msg': msg})
+        del_user.delete()  # 级联删除UserFaceImage
+        return JsonResponse({'msg': '用户及人脸记录已删除（含百度云）'})
     except UserProfile.DoesNotExist:
-        print("[delete_user] 目标用户不存在", file=sys.stderr)
         return JsonResponse({'msg': '用户不存在'}, status=404)
     except Exception as e:
-        print(f"[delete_user] 其他异常: {str(e)}", file=sys.stderr)
         return JsonResponse({'msg': f'删除失败: {str(e)}'}, status=500)
     
 @api_view(['POST'])
@@ -1023,7 +1001,7 @@ def points_api(request):
     limit = int(request.GET.get('limit', 200))
     table = 'jn0912_baidu_coords'
 
-    sql = f"SELECT LAT, LON, UTC, COMMADDR, HEAD, TFLAG, status FROM {table} WHERE 1=1"
+    sql = f"SELECT LAT, LON, UTC, COMMADDR, HEAD, TFLAG, status, SPEED FROM {table} WHERE 1=1"
     params = []
     if start:
         sql += " AND UTC >= %s"
@@ -1049,7 +1027,8 @@ def points_api(request):
             'car': row[3],
             'head': row[4],
             'tflag': row[5],
-            'status': row[6]
+            'status': row[6],
+            'speed': row[7]
         }
         for row in rows
     ]

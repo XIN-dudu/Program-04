@@ -37,9 +37,9 @@
       <div class="result-list">
         <p v-if="!result">具体展示结果</p>
         <div v-else class="result-card">
-          <h3>{{ result.title }}</h3>
+          <h3>病害类型：{{ result.title }}</h3>
           <p>{{ result.description }}</p>
-          <p><strong>严重程度:</strong> {{ result.severity }}</p>
+          <p><strong>危险等级:</strong> {{ result.severity }}</p>
           <p>{{ result.position }}</p>
 
           <div v-if="result.media_url" class="result-media">
@@ -367,7 +367,7 @@ const detectIssues = async () => {
     formData.append('roadId', roadId.value)
     detectionInProgress.value = true
     try {
-      const response = await axios.post('http://localhost:8000/road/upload', formData, {
+      const response = await axios.post('http://localhost:8000/api/road/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         },
