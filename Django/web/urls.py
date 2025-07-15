@@ -10,7 +10,7 @@ urlpatterns = [
     path('email_login', views.email_login),#邮箱登录
     path('face_recognition', views.face_recognition),
     path('liveness_detection', views.liveness_detection),
-    path('liveness_check', views.liveness_check),
+    path('liveness_check/', views.liveness_check),
     path('click_captcha/', views.click_captcha),
     path('click_captcha/verify/', views.click_captcha_verify),
     path('update_profile/', views.update_profile),

@@ -13,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-@l+)l^ure&c4_0$4(*@e4q&(il1a@*s)3dw4#3^p2orjo0k9+c')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 # 替换为您的云服务器IP或域名
 ALLOWED_HOSTS = ['971646.xyz', 'www.971646.xyz', '120.46.211.91', 'localhost']

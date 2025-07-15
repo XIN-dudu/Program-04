@@ -1,19 +1,27 @@
 <template>
   <div class="liveness-container">
+    <div v-if="showBigAlert" class="big-alert-overlay">
+      <div class="big-alert-box">
+        <h1>警告！检测到非法入侵</h1>
+        <button @click="handleAlertClose">关闭</button>
+      </div>
+    </div>
     <h1>活体检测与识别</h1>
+    <div style="color: #d9534f; font-size: 1.2em; margin-bottom: 18px; font-weight: bold;">该功能暂时关闭，如需使用请联系管理员。</div>
     <div v-if="step === 1">
       <p>请对准摄像头并眨眼，然后点击“开始录制”上传视频进行活体检测（视频录制时长不少于3秒）</p>
       <video ref="video" width="320" height="240" autoplay></video>
       <div class="button-group">
-        <button @click="startRecording" :disabled="recording">开始录制</button>
-        <button @click="stopRecording" :disabled="!recording">停止录制</button>
+        <button @click="startRecording" :disabled="recording || featureClosed">开始录制</button>
+        <button @click="stopRecording" :disabled="!recording || featureClosed">停止录制</button>
       </div>
       <div v-if="videoUrl">
         <video :src="videoUrl" width="320" height="240" controls></video>
         <div class="button-group">
-          <button @click="uploadVideo">上传活体检测</button>
-          <button @click="resetVideo">重新录制</button>
+          <button @click="uploadVideo" :disabled="loading || featureClosed">{{ loading ? '检测中...' : '上传活体检测' }}</button>
+          <button @click="resetVideo" :disabled="featureClosed">重新录制</button>
         </div>
+        <div v-if="loading" style="color: #007bff; margin-top: 10px;">检测中，请稍候...</div>
       </div>
       <div v-if="livenessResult">
         <h3>活体检测结果</h3>
@@ -24,13 +32,13 @@
       <p>活体检测通过！请拍照上传进行身份识别</p>
       <video ref="video" width="320" height="240" autoplay></video>
       <div class="button-group">
-        <button @click="takePhoto">拍照</button>
+        <button @click="takePhoto" :disabled="featureClosed">拍照</button>
       </div>
       <div v-if="imageData">
         <img :src="imageData" width="320" />
         <div class="button-group">
-          <button @click="uploadImage">上传识别</button>
-          <button @click="resetPhoto">重新拍照</button>
+          <button @click="uploadImage" :disabled="featureClosed">上传识别</button>
+          <button @click="resetPhoto" :disabled="featureClosed">重新拍照</button>
         </div>
       </div>
       <div v-if="result">
@@ -67,7 +75,11 @@ export default {
       result: null,
       username: '', // 新增字段
       capturedFrames: [], // 新增：存储截帧图片blob
-      captureInterval: null // 新增：定时器句柄
+      captureInterval: null, // 新增：定时器句柄
+      loading: false, // 新增：检测中 loading 状态
+      showBigAlert: false, // 新增：入侵大弹窗
+      // 软关闭开关，true=禁用所有功能，false=恢复所有功能。要开启活体检测请改为 false
+      featureClosed: true // ← 改为 false 即可恢复活体检测与识别功能
     };
   },
   mounted() {
@@ -150,11 +162,11 @@ export default {
       this.livenessResult = null;
     },
     async uploadVideo() {
+      this.loading = true;
       const blob = await fetch(this.videoUrl).then(r => r.blob());
       const formData = new FormData();
       formData.append('video', blob, 'liveness.webm');
       formData.append('user_id', this.username); // 自动带上当前用户名
-      // 新增：上传截帧图片
       this.capturedFrames.forEach((img, idx) => {
         formData.append('frame' + idx, img, `frame${idx}.jpg`);
       });
@@ -163,9 +175,25 @@ export default {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
         this.livenessResult = response.data;
+        if (!response.data.success) {
+          if (response.data.fail_type === 'intrusion') {
+            this.showBigAlert = true;
+            localStorage.setItem('intrusion_alert', '1');
+          } else {
+            alert(response.data.msg || '检测失败，请重试');
+          }
+        }
       } catch (error) {
         this.livenessResult = { success: false, msg: error.response?.data?.msg || '检测失败' };
+        alert(this.livenessResult.msg);
+      } finally {
+        this.loading = false;
       }
+    },
+    handleAlertClose() {
+      this.showBigAlert = false;
+      localStorage.removeItem('intrusion_alert');
+      this.$router.push('/login');
     },
     // 拍照识别相关
     takePhoto() {
