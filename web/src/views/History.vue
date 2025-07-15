@@ -72,7 +72,7 @@ const isVideoUrl = (url) => /\.(mp4|webm|ogg|avi|mov)$/i.test(url)
 // 获取记录
 const fetchRecords = async () => {
   try {
-    const res = await axios.get(`${backendBaseURL}/api/history/list`, {
+    const res = await axios.get(`${backendBaseURL}/history/list`, {
       withCredentials: true
     })
     records.value = res.data
@@ -87,7 +87,7 @@ const deleteRecord = async (diseaseId, index) => {
   if (!confirm('确定要删除这条记录吗？')) return
 
   try {
-    await axios.delete(`${backendBaseURL}/api/history/${diseaseId}/delete`, {
+    await axios.delete(`${backendBaseURL}/history/${diseaseId}/delete`, {
       withCredentials: true
     })
     records.value.splice(index, 1)
