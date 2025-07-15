@@ -211,27 +211,43 @@ def heatmap_data(request):
     示例返回：
         {"points": [{"lng": 117.1, "lat": 36.6}, ...]}
     """
+    import pymysql
     date = request.GET.get('date', '0912')
     start_time = request.GET.get('start_time', '00:00:00')
     end_time = request.GET.get('end_time', '23:59:59')
-    # 文件路径
-    file_path = os.path.join(settings.BASE_DIR, f'..', 'pandas', 'data_clean_od_pairs', f'jn{date}_od_pairs.csv')
-    file_path = os.path.abspath(file_path)
-    if not os.path.exists(file_path):
-        return Response({'error': '数据文件不存在'}, status=404)
-    # 只读取部分数据，防止内存溢出
-    df = pd.read_csv(file_path, usecols=['O_LON', 'O_LAT', 'O_TIME'], nrows=500000)  # 可调整nrows
-    # 时间筛选
+    table_name = f'jn{date}_od_pairs'
+
+    # 正确拼接日期字符串
+    month = date[:2]
+    day = date[2:]
+    date_str = f"2013-{month}-{day}"
+    start_dt = f"{date_str} {start_time}"
+    end_dt = f"{date_str} {end_time}"
+
     try:
-        df['O_TIME'] = pd.to_datetime(df['O_TIME'])
-        start_dt = df['O_TIME'].dt.normalize()[0].strftime('%Y-%m-%d') + ' ' + start_time
-        end_dt = df['O_TIME'].dt.normalize()[0].strftime('%Y-%m-%d') + ' ' + end_time
-        mask = (df['O_TIME'] >= start_dt) & (df['O_TIME'] < end_dt)
-        df = df[mask]
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        sql = f"""
+            SELECT o_lon, o_lat, o_time
+            FROM {table_name}
+            WHERE o_time >= %s AND o_time < %s
+            LIMIT 500000
+        """
+        cursor.execute(sql, (start_dt, end_dt))
+        rows = cursor.fetchall()
+        points = [
+            {'lng': float(row[0]), 'lat': float(row[1])}
+            for row in rows if row[0] is not None and row[1] is not None
+        ]
+        cursor.close()
+        conn.close()
+        return Response({'points': points})
     except Exception as e:
-        return Response({'error': f'时间筛选失败: {str(e)}'}, status=400)
-    # 组装热力图点
-    points = [
-        {'lng': row['O_LON'], 'lat': row['O_LAT']} for _, row in df.iterrows()
-    ]
-    return Response({'points': points})
+        import traceback
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
