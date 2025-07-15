@@ -19,8 +19,34 @@ from .serializers import RoadRecordSerializer
 
 from .models import roadRecord
 
+CLASS_LABELS = {
+    0: "D00",  # 纵向裂纹
+    1: "D10",  # 横向裂纹
+    2: "D20",  # 龟裂
+    3: "D40",  # 坑槽
+    4: "repair"  # 修补区域
+}
 
 model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
+
+def calculate_dimensions(boxes):
+    """计算检测框的尺寸信息"""
+    max_length = 0.0
+    total_area = 0.0
+    
+    for box in boxes:
+        x1, y1, x2, y2 = box.xyxy[0].tolist()  # 获取边界框坐标
+        width = x2 - x1
+        height = y2 - y1
+        
+        # 计算面积和长度（取最长边）
+        area = width * height
+        length = max(width, height)
+        
+        total_area += area
+        max_length = max(max_length, length)
+    
+    return max_length, total_area
 
 def process_video_task(video_path, output_subdir, name):
     try:
@@ -37,29 +63,43 @@ def process_video_task(video_path, output_subdir, name):
         output_path = os.path.join(output_dir, name)
         fourcc = cv2.VideoWriter_fourcc(*'avc1')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        max_length = 0.0
+        total_area = 0.0
+        frame_count = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            
-            # 调整帧尺寸
-            frame = cv2.resize(frame, (width, height))
-            
-            # YOLO推理
-            results = model(frame)
-            annotated_frame = results[0].plot()
-            
-            # 写入处理后的帧
-            out.write(annotated_frame)
+            frame_count += 1
+            if frame_count % 5 == 0 :
+                # 调整帧尺寸
+                frame = cv2.resize(frame, (width, height))
+                if frame_count % 5 == 0:
+                    results = model(frame)
+                if results and len(results[0].boxes) > 0:
+                    current_max, current_area = calculate_dimensions(results[0].boxes)
+                    max_length = max(max_length, current_max)
+                    total_area += current_area
+                # YOLO推理
+                results = model(frame)
+                annotated_frame = results[0].plot()
+                
+                # 写入处理后的帧
+                out.write(annotated_frame)
         cap.release()
         out.release()
         # 构建访问URL
         rel_url = os.path.join(settings.MEDIA_URL, output_subdir, name)
-        return rel_url
+        return {
+            'rel_url': rel_url,
+            'max_length': max_length,
+            'total_area': total_area
+        }
  
     except Exception as e:
         # 记录详细日志
         return {'status': 'error', 'message': '视频处理失败'}
+
 
 # Create your views here.
 
@@ -100,13 +140,11 @@ def upload_image(request):
     record = roadRecord()
     record.road_id = roadId
     record.detection_time = datetime.now()
-    record.length = random.uniform(1, 10)
-    record.area = random.uniform(1, 100)
+    # record.length = random.uniform(1, 10)
+    # record.area = random.uniform(1, 100)
     record.path = file.name
-
-    record.disease_type = 1
+    # record.disease_type = 1
     record.severity = 1
-    record.save()
 
     # 视频保存
     subdir = 'road'
@@ -118,7 +156,11 @@ def upload_image(request):
         try:
             task = process_video_task(local_path, 'road/results', file.name)
             # 构建视频访问URL
-            video_url = request.build_absolute_uri(task)
+            res = request.build_absolute_uri(task)
+            record.length = res['max_length'] * 0.01  # 应用转换系数
+            record.area = res['total_area'] * (0.01**2)
+            record.save()
+            video_url = res['rel_url']
             print(video_url)
             return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "video", "media_url": video_url}, status=200)
         except Exception as e:
@@ -135,6 +177,43 @@ def upload_image(request):
                 name='results',    # 创建results子目录
                 exist_ok=True
             )
+            if results and len(results[0].boxes) > 0:
+                # 获取检测结果
+                boxes = results[0].boxes
+                classes = boxes.cls.cpu().numpy()  # 获取类别索引
+                confidences = boxes.conf.cpu().numpy()  # 获取置信度
+                
+                # 找到最高置信度的检测结果
+                main_idx = confidences.argmax()
+                class_idx = int(classes[main_idx])
+                label = CLASS_LABELS.get(class_idx, "unknown")
+
+                # 计算尺寸
+                max_length, total_area = calculate_dimensions(boxes)
+                
+                # 应用物理尺寸转换
+                pixel_to_meter = 0.003
+                record.length = max_length * pixel_to_meter
+                record.area = total_area * (pixel_to_meter**2)
+
+                # 根据标签生成动态响应
+                if label == "D00":
+                    record.disease_type = 1
+                elif label == "D10":
+                    record.disease_type = 2
+                elif label == "D20":
+                    record.disease_type = 3
+                elif label == "D40":
+                    record.disease_type = 4
+                elif label == "repair":
+                    record.disease_type = 5
+                    record.severity = 0
+            else:
+                record.length = 0.0
+                record.area = 0.0
+                record.disease_type = 0
+                record.severity = 0
+            record.save()
             # 获取处理后的图片路径
             processed_dir = os.path.join(settings.MEDIA_ROOT, subdir, 'results')
             print(processed_dir)
@@ -169,20 +248,6 @@ def history_get(request):
     serializer = RoadRecordSerializer(records, many=True)
     print(serializer.data)
     return Response(serializer.data)
-
-@api_view(['GET'])
-def history_video(request):
-    """
-    获取历史检测视频记录。
-
-    GET参数：无
-    返回：
-        - success (string): 操作结果
-    示例返回：
-        {"success": "ok"}
-    """
-    return Response({'success'})
-
 
 @api_view(['DELETE'])
 def history_delete(request):
