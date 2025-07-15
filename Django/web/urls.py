@@ -25,4 +25,5 @@ urlpatterns = [
     path('user/profile/', views.current_user_profile),
     path('avatar/<str:username>/', views.get_avatar),
     path('liveness_and_face_verify/', liveness_and_face_verify),
+    path('cars/', views.car_list),
 ]
