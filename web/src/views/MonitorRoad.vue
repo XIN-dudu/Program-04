@@ -367,7 +367,7 @@ const detectIssues = async () => {
     formData.append('roadId', roadId.value)
     detectionInProgress.value = true
     try {
-      const response = await axios.post('http://localhost:8000/road/upload', formData, {
+      const response = await axios.post('http://localhost:8000/api/road/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         },

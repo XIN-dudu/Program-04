@@ -82,7 +82,7 @@ const fetchHistory = async () => {
     if (search.value.startTime) params.startTime = search.value.startTime
     if (search.value.endTime) params.endTime = search.value.endTime
 
-    const res = await axios.get(`${backendBaseURL}/history/list`, { params })
+    const res = await axios.get(`${backendBaseURL}/api/history/list`, { params })
     let allRecords = res.data
 
     // 前端过滤：精准匹配
