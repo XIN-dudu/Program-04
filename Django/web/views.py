@@ -395,11 +395,19 @@ def send_email_code(request):
         smtp_server = 'smtp.qq.com'
         from_addr = '2640584193@qq.com'  # TODO: 改成你的发件邮箱
         password = 'czryjftofgjrebhi'  # TODO: 改成你的邮箱授权码
-        msg = MIMEText(f'您的登录验证码是：{code}，5分钟内有效。', 'plain', 'utf-8')
+        msg = MIMEText(
+            f'''<div style="font-size:16px;line-height:2;">
+                【智能道路巡检与城市交通大数据平台】<br>
+                您正在进行登录操作，本次验证码为：
+                <span style="color:#1976d2;font-size:22px;font-weight:bold;">{code}</span><br>
+                验证码有效期为5分钟，请勿泄露给他人。<br>
+                如非本人操作，请及时忽略本邮件并注意账号安全。
+            </div>''',
+            'html', 'utf-8')
         from email.utils import formataddr
-        msg['From'] = formataddr(("验证码登录", from_addr))
+        msg['From'] = formataddr(("智能道路平台验证码", from_addr))
         msg['To'] = Header(to_addr, 'utf-8')
-        msg['Subject'] = Header("登录验证码", 'utf-8')
+        msg['Subject'] = Header("智能道路平台登录验证码", 'utf-8')
         server = smtplib.SMTP_SSL(smtp_server, 465)
         server.login(from_addr, password)
         server.sendmail(from_addr, [to_addr], msg.as_string())
