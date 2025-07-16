@@ -20,7 +20,8 @@ import numpy as np
 
 from .serializers import RoadRecordSerializer
 
-from .models import roadRecord
+from .models import roadRecord, RepairAssignment
+from web.models import UserProfile
 
 CLASS_LABELS = {
     0: "D00",  # 纵向裂纹
@@ -580,3 +581,27 @@ def road_avg_speed(request):
         avg = day_map.get(day, 0)
         result.append({"date": day, "avg_speed": round(avg, 2) if avg else 0})
     return JsonResponse(result, safe=False)
+
+@api_view(['POST'])
+def assign_task(request, task_id):
+    """
+    为指定任务分配多个维修工。
+    POST参数：assigned_person_ids: [int, ...]
+    """
+    try:
+        task = roadRecord.objects.get(pk=task_id)
+    except roadRecord.DoesNotExist:
+        return Response({'msg': '任务不存在'}, status=404)
+    ids = request.data.get('assigned_person_ids', [])
+    if not isinstance(ids, list) or not ids:
+        return Response({'msg': '请选择至少一位维修工'}, status=400)
+    # 先删除该任务原有分配
+    RepairAssignment.objects.filter(road_record=task).delete()
+    # 批量分配
+    for uid in ids:
+        try:
+            worker = UserProfile.objects.get(pk=uid, permission=1)
+            RepairAssignment.objects.create(road_record=task, worker=worker)
+        except UserProfile.DoesNotExist:
+            continue
+    return Response({'msg': '分配成功'})

@@ -29,4 +29,19 @@ class roadRecord(models.Model):
         (1, 'IMAGE'),   
     ]
     file_type = models.IntegerField(choices=FILE_TYPE_CHOICES, null=False, blank=False)
-    description = models.JSONField(null=False, blank=False)
+    description = models.JSONField(null=False, blank=False, default=dict)
+    # 新增：多对多分配关系（通过中间表）
+    assigned_workers = models.ManyToManyField('web.UserProfile', through='RepairAssignment', related_name='assigned_road_records', blank=True)
+
+# 新增：任务分配中间表
+class RepairAssignment(models.Model):
+    road_record = models.ForeignKey(roadRecord, on_delete=models.CASCADE, related_name='assignments')
+    worker = models.ForeignKey('web.UserProfile', on_delete=models.CASCADE, related_name='worker_assignments')
+    assigned_time = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, default='pending')  # 可选：pending/finished等
+    
+    class Meta:
+        unique_together = ('road_record', 'worker')
+    
+    def __str__(self):
+        return f"{self.road_record.disease_id} -> {self.worker.username} ({self.status})"

@@ -21,12 +21,25 @@
           <td><a :href="task.url" target="_blank">查看</a></td>
 
           <td>
-            <select v-model="task.assigned_person_id">
-              <option value="">请选择维修工</option>
-              <option v-for="user in repairUsers" :key="user.id" :value="user.id">
-                {{ user.username }}
-              </option>
-            </select>
+            <div class="custom-multiselect" @click="toggleDropdown(task)" :tabindex="0" @blur="closeDropdown(task)">
+              <div class="selected-tags">
+                <span v-for="id in task.assigned_person_ids" :key="id" class="tag">
+                  {{ getUsernameById(id) }}
+                  <span class="remove-tag" @click.stop="removeWorker(task, id)">&times;</span>
+                </span>
+                <span v-if="!task.assigned_person_ids.length" class="placeholder">请选择维修工</span>
+              </div>
+              <div class="dropdown" v-show="task.dropdownOpen">
+                <div v-for="user in repairUsers" :key="user.id" class="dropdown-item" @click.stop="toggleWorker(task, user.id)">
+                  <input type="checkbox" :checked="task.assigned_person_ids.includes(user.id)" />
+                  <span>{{ user.username }}</span>
+                </div>
+                <div class="dropdown-actions">
+                  <button type="button" @click.stop="clearAll(task)">清除</button>
+                  <button type="button" @click.stop="closeDropdown(task)">关闭</button>
+                </div>
+              </div>
+            </div>
           </td>
 
           <td>
@@ -58,10 +71,11 @@ const errorMsg = ref('')
 async function loadTasks() {
   try {
     const res = await axios.get('http://localhost:8000/history/list')
-    // 只添加 assigned_person_id 字段用于选择维修工
+    // 多选分配，assigned_person_ids为数组
     tasks.value = res.data.map(item => ({
       ...item,
-      assigned_person_id: ''
+      assigned_person_ids: [],
+      dropdownOpen: false // 新增属性，控制下拉框的显示
     }))
   } catch (error) {
     errorMsg.value = '加载病害任务失败'
@@ -85,25 +99,50 @@ async function loadRepairUsers() {
 async function assignTask(task) {
   successMsg.value = ''
   errorMsg.value = ''
-
-  if (!task.assigned_person_id) {
-    errorMsg.value = '请选择维修工'
+  if (!task.assigned_person_ids || task.assigned_person_ids.length === 0) {
+    errorMsg.value = '请选择至少一位维修工'
     return
   }
-
   assignLoading[task.id] = true
   try {
-    // 根据后端接口调整请求体
     await axios.post(`/api/tasks/${task.id}/assign/`, {
-      assigned_person_id: task.assigned_person_id
+      assigned_person_ids: task.assigned_person_ids
     }, { withCredentials: true })
-
     successMsg.value = `任务 ${task.id} 分配成功`
   } catch (error) {
     errorMsg.value = `任务 ${task.id} 分配失败`
   } finally {
     assignLoading[task.id] = false
   }
+}
+
+function getUsernameById(id) {
+  const user = repairUsers.value.find(u => u.id === id)
+  return user ? user.username : id
+}
+function toggleDropdown(task) {
+  tasks.value.forEach(t => t.dropdownOpen = false)
+  task.dropdownOpen = !task.dropdownOpen
+}
+function closeDropdown(task) {
+  setTimeout(() => { task.dropdownOpen = false }, 100)
+}
+function toggleWorker(task, id) {
+  const idx = task.assigned_person_ids.indexOf(id)
+  if (idx === -1) {
+    task.assigned_person_ids.push(id)
+  } else {
+    task.assigned_person_ids.splice(idx, 1)
+  }
+}
+function removeWorker(task, id) {
+  const idx = task.assigned_person_ids.indexOf(id)
+  if (idx !== -1) {
+    task.assigned_person_ids.splice(idx, 1)
+  }
+}
+function clearAll(task) {
+  task.assigned_person_ids = []
 }
 
 onMounted(() => {
@@ -177,5 +216,83 @@ button:disabled {
 
 .error {
   color: red;
+}
+
+.custom-multiselect {
+  position: relative;
+  min-width: 180px;
+  border: 1.5px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  padding: 4px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.selected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 28px;
+  align-items: center;
+}
+.tag {
+  background: #e6f0ff;
+  color: #007bff;
+  border-radius: 12px;
+  padding: 2px 10px 2px 8px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  margin-right: 2px;
+}
+.remove-tag {
+  margin-left: 4px;
+  color: #888;
+  cursor: pointer;
+  font-size: 15px;
+}
+.placeholder {
+  color: #bbb;
+  font-size: 13px;
+}
+.dropdown {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 10;
+  background: #fff;
+  border: 1.5px solid #007bff;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  min-width: 180px;
+  margin-top: 2px;
+  padding: 6px 0 0 0;
+}
+.dropdown-item {
+  padding: 4px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dropdown-item:hover {
+  background: #f0f8ff;
+}
+.dropdown-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 6px 12px 6px 0;
+}
+.dropdown-actions button {
+  background: #eee;
+  border: none;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dropdown-actions button:hover {
+  background: #e6f0ff;
 }
 </style>
