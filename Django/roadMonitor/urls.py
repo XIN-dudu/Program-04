@@ -9,4 +9,5 @@ urlpatterns = [
     path('week_flow/', views.week_flow),
     path('road_distance_type/', views.road_distance_type),
     path('road_avg_speed/', views.road_avg_speed),
+    path('heatmap_clustered/', views.heatmap_clustered, name='heatmap_clustered'),
 ]

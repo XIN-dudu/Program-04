@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from ultralytics import YOLO
 import cv2
 from django.db import connection
+from sklearn.cluster import DBSCAN
+import numpy as np
 
 from .serializers import RoadRecordSerializer
 
@@ -399,6 +401,84 @@ def heatmap_data(request):
         cursor.close()
         conn.close()
         return Response({'points': points})
+    except Exception as e:
+        import traceback
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+
+@api_view(['GET'])
+def heatmap_clustered(request):
+    """
+    获取聚类后的热力图数据。
+    GET参数：
+        - start_time (string, 可选): 起始时间，格式如 '08:00:00'，默认00:00:00
+        - end_time (string, 可选): 结束时间，格式如 '08:15:00'，默认23:59:59
+        - date (string, 可选): 日期，格式如 '0912'，默认0912
+        - eps (float, 可选): DBSCAN聚类半径，单位为经纬度，默认0.002
+        - min_samples (int, 可选): DBSCAN最小聚类点数，默认10
+    返回：
+        - points (list): 热力图点列表，每个点含 lng(经度), lat(纬度), weight(聚类点数)
+    """
+    import pymysql
+    date = request.GET.get('date', '0912')
+    start_time = request.GET.get('start_time', '00:00:00')
+    end_time = request.GET.get('end_time', '23:59:59')
+    eps = float(request.GET.get('eps', 0.002))  # 约200米
+    min_samples = int(request.GET.get('min_samples', 10))
+    table_name = f'jn{date}_od_pairs'
+
+    # 拼接日期字符串
+    month = date[:2]
+    day = date[2:]
+    date_str = f"2013-{month}-{day}"
+    start_dt = f"{date_str} {start_time}"
+    end_dt = f"{date_str} {end_time}"
+
+    try:
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        sql = f"""
+            SELECT o_lon, o_lat
+            FROM {table_name}
+            WHERE o_time >= %s AND o_time < %s
+            LIMIT 500000
+        """
+        cursor.execute(sql, (start_dt, end_dt))
+        rows = cursor.fetchall()
+        points = [
+            [float(row[0]), float(row[1])]
+            for row in rows if row[0] is not None and row[1] is not None
+        ]
+        cursor.close()
+        conn.close()
+
+        if not points:
+            return Response({'points': []})
+
+        # DBSCAN聚类
+        X = np.array(points)
+        db = DBSCAN(eps=eps, min_samples=min_samples).fit(X)
+        labels = db.labels_
+
+        clusters = []
+        for label in set(labels):
+            if label == -1:
+                continue  # 忽略噪声点
+            cluster_points = X[labels == label]
+            center = cluster_points.mean(axis=0)
+            weight = len(cluster_points)
+            clusters.append({
+                "lng": float(center[0]),
+                "lat": float(center[1]),
+                "weight": weight
+            })
+
+        return Response({'points': clusters})
     except Exception as e:
         import traceback
         return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
