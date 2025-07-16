@@ -15,15 +15,22 @@
         <div class="info-row-light">
           <span class="info-label-light">手机号</span>
           <span class="info-value-center">{{ user.phone }}</span>
-          <button class="edit-btn-light" @click="showPhoneEdit = true">编辑</button>
+          <button class="edit-btn-light" @click="openPhoneEdit">编辑</button>
         </div>
-        <el-dialog title="修改手机号" :visible.sync="showPhoneEdit" width="350px">
-          <el-input v-model="editPhone" placeholder="请输入新手机号" maxlength="20" />
-          <span slot="footer" class="dialog-footer">
-            <el-button @click="showPhoneEdit = false">取消</el-button>
-            <el-button type="primary" style="background:#e3f2fd;color:#1890ff;border:none;" @click="submitPhoneEdit">保存</el-button>
-          </span>
-        </el-dialog>
+        <!-- 手机号编辑弹窗 -->
+        <div v-if="showPhoneEdit" class="modal-mask-light">
+          <div class="modal-content-light">
+            <h3>修改手机号</h3>
+            <div class="form-row-modal-light">
+              <label>新手机号：</label>
+              <input v-model="editPhone" maxlength="20" />
+            </div>
+            <div style="text-align:right;margin-top:18px;">
+              <button class="btn-light cancel" @click="showPhoneEdit = false">取消</button>
+              <button class="btn-light" @click="submitPhoneEdit">保存</button>
+            </div>
+          </div>
+        </div>
         <div class="info-row-light permission-row-fix"><span class="info-label-light">权限</span><span class="info-value-center permission-value">{{ permissionText }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
         <div class="info-row-light no-border info-row-password-btn"><button class="edit-btn-light left-btn" @click="showEditAll = true">修改密码</button></div>
       </div>
@@ -228,6 +235,10 @@ export default {
         this.user.phone = this.editPhone;
         this.showPhoneEdit = false;
       });
+    },
+    openPhoneEdit() {
+      this.editPhone = this.user.phone || '';
+      this.showPhoneEdit = true;
     }
   }
 }
