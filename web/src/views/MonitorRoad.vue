@@ -16,14 +16,10 @@
       <!-- 控制按钮区域 -->
       <div class="control-bar">
         <input type="text" v-model="roadId" placeholder="道路编号" class="input" />
-
-        <!-- 摄像头控制 -->
         <button @click="openCamera" :disabled="videoActive">打开摄像头</button>
         <button @click="startRecording" :disabled="recording || !videoActive">开始录制</button>
         <button @click="stopRecording" :disabled="!recording">停止录制</button>
         <button @click="takePhoto" :disabled="!videoActive || recording">拍照</button>
-
-        <!-- 文件上传 -->
         <button @click="triggerUpload">本地上传</button>
         <button @click="detectIssues" :disabled="detectionInProgress">{{ detectionInProgress ? '检测中' : '检测' }}</button>
         <button @click="stopCamera">结束</button>
@@ -35,19 +31,18 @@
     <div class="right-panel">
       <div class="result-header">检测结果：</div>
       <div class="result-list">
-        <p v-if="!result">具体展示结果</p>
-        <div v-else class="result-card">
-          <h3>病害类型：{{ result.title }}</h3>
-          <p>{{ result.description }}</p>
-          <p><strong>危险等级:</strong> {{ result.severity }}</p>
-          <p>{{ result.position }}</p>
+        <p v-if="results.length === 0">暂无检测结果</p>
+        <div v-else>
+          <div v-for="(item, index) in results" :key="index" class="result-section">
+            <h3 style="margin-top: 10px">道路编号：{{ item.road_id }}</h3>
 
-          <div v-if="result.media_url" class="result-media">
-            <video v-if="result.media_type === 'video'" controls autoplay playsinline muted style="width:100%">
-              <source :src="result.media_url" :type="'video/mp4'" />
-              您的浏览器不支持视频播放
-            </video>
-            <img v-else-if="result.media_type === 'image'" :src="result.media_url" alt="检测结果示意图" />
+            <div v-for="(desc, i) in item.description" :key="i" class="result-card">
+              <p><strong>病害类型：</strong>{{ desc.disease_type }}</p>
+              <p><strong>危险等级：</strong>{{ desc.severity }}</p>
+              <p><strong>面积比例：</strong>{{ desc.area.toFixed(4) }}</p>
+              <p><strong>裂缝长度：</strong>{{ desc.length.toFixed(4) }}</p>
+              <img v-if="desc.url" :src="desc.url.replace(/\\/g, '/')" alt="检测图" />
+            </div>
           </div>
         </div>
       </div>
@@ -63,10 +58,10 @@ const roadId = ref('')
 const videoActive = ref(false)
 const selectedFile = ref(null)
 const detectionInProgress = ref(false)
-const result = ref()
+const results = ref([])
+
 const videoElement = ref(null)
 const fileInput = ref(null)
-
 const mediaPreviewUrl = ref('')
 const isImage = ref(false)
 const isVideo = ref(false)
@@ -74,10 +69,11 @@ const isVideo = ref(false)
 const photoDataUrl = ref('')
 const recordedVideoUrl = ref('')
 const recording = ref(false)
-
 const mediaStream = ref(null)
 const mediaRecorder = ref(null)
 const recordedChunks = ref([])
+
+let autoStopTimer = null
 
 const openCamera = () => {
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -92,7 +88,6 @@ const openCamera = () => {
         photoDataUrl.value = ''
         mediaPreviewUrl.value = ''
 
-        // 设置摄像头流到 video 元素
         nextTick(() => {
           if (videoElement.value) {
             videoElement.value.srcObject = stream
@@ -103,7 +98,6 @@ const openCamera = () => {
           }
         })
 
-        // 设置自动关闭定时器
         clearTimeout(autoStopTimer)
         autoStopTimer = setTimeout(() => {
           alert('摄像头使用时间到，自动关闭')
@@ -113,8 +107,6 @@ const openCamera = () => {
       .catch(error => {
         console.error('摄像头访问失败:', error)
       })
-  } else {
-    //alert('当前浏览器不支持摄像头访问')
   }
 }
 
@@ -124,7 +116,6 @@ const startRecording = () => {
     return
   }
 
-  // 清空上一次录制的视频 URL 和播放器内容
   recordedVideoUrl.value = ''
   isVideo.value = true
   isImage.value = false
@@ -139,28 +130,24 @@ const startRecording = () => {
 
   recordedChunks.value = []
   try {
-    // 优先尝试MP4格式（需要浏览器支持）
-    mediaRecorder.value = new MediaRecorder(mediaStream.value, { 
-      mimeType: 'video/mp4' 
-    })
-  } catch (e) {
-    // 降级方案：使用webm格式
-    console.warn('MP4格式不支持，降级使用webm')
+    mediaRecorder.value = new MediaRecorder(mediaStream.value, { mimeType: 'video/mp4' })
+  } catch {
     mediaRecorder.value = new MediaRecorder(mediaStream.value)
   }
 
-  mediaRecorder.value.ondataavailable = event => {
-    if (event.data.size > 0) {
-      recordedChunks.value.push(event.data)
-    }
+  mediaRecorder.value.ondataavailable = e => {
+    if (e.data.size > 0) recordedChunks.value.push(e.data)
   }
 
   mediaRecorder.value.onstop = () => {
-    const blob = new Blob(recordedChunks.value, { type: 'video/webm' })
+    const mimeType = mediaRecorder.value.mimeType.includes('mp4') ? 'video/mp4' : 'video/webm'
+    const blob = new Blob(recordedChunks.value, { type: mimeType })
+    const fileExtension = mimeType.split('/')[1]
+    const file = new File([blob], `recording_${Date.now()}.${fileExtension}`, { type: mimeType })
+    selectedFile.value = file
     const url = URL.createObjectURL(blob)
     recordedVideoUrl.value = url
 
-    // 显示录制结果视频
     if (videoElement.value) {
       videoElement.value.srcObject = null
       videoElement.value.src = url
@@ -169,6 +156,10 @@ const startRecording = () => {
       videoElement.value.play()
     }
 
+    isVideo.value = true
+    isImage.value = false
+    videoActive.value = false
+    stop()
   }
 
   mediaRecorder.value.start()
@@ -179,53 +170,21 @@ const stopRecording = () => {
   if (mediaRecorder.value && recording.value) {
     mediaRecorder.value.stop()
     recording.value = false
-
-    mediaRecorder.value.onstop = () => {
-      
-      const mimeType = mediaRecorder.value.mimeType.includes('mp4') ? 'video/mp4' : 'video/webm'
-    
-      const blob = new Blob(recordedChunks.value, { type: mimeType })
-      const fileExtension = mimeType.split('/')[1]
-      
-      const file = new File([blob], `recording_${Date.now()}.${fileExtension}`, {
-        type: mimeType
-      })
-      selectedFile.value = file
-      const url = URL.createObjectURL(blob)
-      recordedVideoUrl.value = url
-
-      //设置 video 显示录制内容
-      if (videoElement.value) {
-        videoElement.value.srcObject = null
-        videoElement.value.src = url
-        videoElement.value.controls = true
-        videoElement.value.load()
-        videoElement.value.play()
-      }
-
-      isVideo.value = true
-      isImage.value = false
-      videoActive.value = false
-      stop()
-    }
   }
 }
 
 const takePhoto = () => {
   if (!videoElement.value) return
 
-  // 清空状态
   recordedVideoUrl.value = ''
   mediaPreviewUrl.value = ''
   selectedFile.value = null
-  result.value = null
+  results.value = []
   isImage.value = true
   isVideo.value = false
   videoActive.value = false
-  
-  
+
   const video = videoElement.value
-  selectedFile.value = video
   const canvas = document.createElement('canvas')
   canvas.width = video.videoWidth || 640
   canvas.height = video.videoHeight || 480
@@ -234,7 +193,6 @@ const takePhoto = () => {
   const dataUrl = canvas.toDataURL('image/jpg')
   photoDataUrl.value = dataUrl
 
-  //清空 video 内容，确保视频不再显示
   if (videoElement.value) {
     videoElement.value.pause()
     videoElement.value.srcObject = null
@@ -242,68 +200,34 @@ const takePhoto = () => {
     videoElement.value.load()
   }
 
-  //设置图片预览
-  mediaPreviewUrl.value = dataUrl
-  // 生成Blob对象
   canvas.toBlob(async (blob) => {
-    const file = new File([blob], `photo_${Date.now()}.jpg`, {
-      type: 'image/jpg'
-    })
-    // 更新状态
+    const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpg' })
     selectedFile.value = file
     mediaPreviewUrl.value = URL.createObjectURL(blob)
     isImage.value = true
     isVideo.value = false
-    videoActive.value = false
     stop()
   }, 'image/jpg')
-
 }
 
-
-const stopCamera = async () => {
-
+const stopCamera = () => {
   stop()
   if (mediaPreviewUrl.value) {
     URL.revokeObjectURL(mediaPreviewUrl.value)
     mediaPreviewUrl.value = ''
   }
 
-  // if (selectedFile.value) {
-  //   const formData = new FormData()
-  //   formData.append('file', selectedFile.value)
-  //   formData.append('roadId', roadId.value)
-
-  //   try {
-  //     await axios.post('http://localhost:8000/road/upload', formData, {
-  //       headers: {
-  //         'Content-Type': 'multipart/form-data'
-  //       }
-  //     })
-  //     const result = await res.json()
-  //     console.log('上传成功:', result)
-  //     alert(result)
-  //   } catch (err) {
-  //     console.error('上传失败:', err)
-  //   }
-  // }
   roadId.value = ''
   videoActive.value = false
   selectedFile.value = null
   detectionInProgress.value = false
-  result.value = null
+  results.value = []
   isImage.value = false
   isVideo.value = false
   photoDataUrl.value = ''
   recordedVideoUrl.value = ''
   recording.value = false
-  if (mediaPreviewUrl.value) {
-    URL.revokeObjectURL(mediaPreviewUrl.value)
-    mediaPreviewUrl.value = ''
-  }
-
   if (fileInput.value) fileInput.value.value = ''
-
 }
 
 const stop = () => {
@@ -323,12 +247,10 @@ const triggerUpload = () => {
     return
   }
   stopCamera()
-
   fileInput.value.click()
 }
 
 const handleUpload = async e => {
-
   if (mediaPreviewUrl.value) {
     URL.revokeObjectURL(mediaPreviewUrl.value)
     mediaPreviewUrl.value = ''
@@ -344,7 +266,7 @@ const handleUpload = async e => {
   videoActive.value = isVideo.value
   photoDataUrl.value = ''
   recordedVideoUrl.value = ''
-  result.value = null
+  results.value = []
 
   if (isVideo.value) {
     await nextTick()
@@ -356,39 +278,32 @@ const handleUpload = async e => {
     }
   }
 }
+
 const detectIssues = async () => {
   if (!roadId.value || !selectedFile.value) {
     alert('请填写道路编号并上传视频/图片')
     return
   }
-  if (selectedFile.value) {
-    const formData = new FormData()
-    formData.append('file', selectedFile.value)
-    formData.append('roadId', roadId.value)
-    detectionInProgress.value = true
-    try {
-      const response = await axios.post('http://localhost:8000/road/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        },
-        withCredentials: true
-      })
-      result.value = {
-        title: response.data.title,
-        description: response.data.description,
-        severity: response.data.severity,
-        position: response.data.position,
-        media_type: response.data.media_type,
-        media_url: response.data.media_url
-      }
-      alert(result.value.media_url)
-      //alert("success")
-      console.log('上传成功:', result)
-    } catch (err) {
-      console.error('上传失败:', err)
-      alert("fail")
-    }
+
+  const formData = new FormData()
+  formData.append('file', selectedFile.value)
+  formData.append('roadId', roadId.value)
+  detectionInProgress.value = true
+
+  try {
+    const response = await axios.post('http://localhost:8000/road/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      withCredentials: true
+    })
+    results.value = response.data.map(item => ({
+      road_id: item.road_id,
+      description: item.description
+    }))
+  } catch (err) {
+    console.error('上传失败:', err)
+    alert('检测失败')
   }
+
   detectionInProgress.value = false
 }
 
@@ -399,7 +314,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopCamera()
 })
-
 </script>
 
 <style scoped>
@@ -410,7 +324,6 @@ onBeforeUnmount(() => {
   font-family: Arial, sans-serif;
 }
 
-/* 左侧 */
 .left-panel {
   flex: 3;
   display: flex;
@@ -471,11 +384,19 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* 右侧结果 */
 .right-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
+  height: 100%; /* 确保撑满高度 */
+  max-height: 600px; /* 根据需要调整固定高度 */
+  overflow: hidden;  /* 防止外部溢出 */
+}
+
+.result-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 6px; /* 给滚动条腾出空间 */
 }
 
 .result-header {
@@ -484,57 +405,25 @@ button:disabled {
   margin-bottom: 10px;
 }
 
-.result-list {
-  flex: 1;
-  background: #fafafa;
-  padding: 10px;
-  border: 1px solid #ddd;
-  overflow-y: auto;
+.result-section {
+  margin-bottom: 20px;
 }
 
 .result-card {
   background: white;
   padding: 10px;
   border-left: 4px solid #1a2980;
-  margin-bottom: 10px;
+  margin-top: 10px;
   border-radius: 5px;
 }
 
-.photo-result img,
-.video-result video {
-  max-width: 100%;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  margin-top: 8px;
-}
-
-.result-image {
-  margin-top: 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  overflow: hidden;
-}
- 
-.result-image img {
+.result-card img {
+  margin-top: 10px;
   width: 100%;
   height: auto;
-  display: block;
   max-height: 300px;
   object-fit: contain;
-}
-.result-media img {
-  width: 100%;
-  height: 300px;
-  object-fit: contain;
+  border: 1px solid #ccc;
   border-radius: 6px;
-  border: 1px solid #ddd;
-  margin-top: 12px;
-}
-.result-media video {
-  max-width: 100%;
-  height: auto;
-  border-radius: 6px;
-  border: 1px solid #ddd;
-  margin-top: 12px;
 }
 </style>

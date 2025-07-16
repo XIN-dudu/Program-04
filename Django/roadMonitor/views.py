@@ -20,7 +20,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
 
 
-from .serializers import RoadRecordSerializer
+from .serializers import RoadRecordSerializer, RoadSerializer
 
 from .models import roadRecord, RepairAssignment, RepairCompletionImage
 from web.models import UserProfile
@@ -30,11 +30,11 @@ CLASS_LABELS = {
     0: "D00",  # 纵向裂纹
     1: "D10",  # 横向裂纹
     2: "D20",  # 龟裂
-    3: "D40",  # 坑槽
-    4: "repair"  # 修补区域
+    3: "D40",  # 坑洼
+    4: "repair"  # 修补
 }
 
-types = ['无', '纵向裂纹', '横向裂纹', '龟裂', '坑槽', '修补区域']
+types = ['无', '纵向裂纹', '横向裂纹', '龟裂', '坑洼', '修补']
 risk_type = ['SAFE', 'LOW', 'MID', 'HIGH']
 
 model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
@@ -167,9 +167,9 @@ def process_video_task(video_path, output_subdir, name, roadId):
                             'disease_type': getLabel(label),
                             'length': current_length * pixel_to_meter,
                             'area': current_area * (pixel_to_meter**2),
-                            'severity': risk_type[checkSeverity(current_length, current_area, getLabel(label))],
-                            'path': f"{os.path.splitext(name)[0]}/{frame_filename}"
-                            })
+                            'severity': checkSeverity(current_length, current_area, getLabel(label)),
+                            'url': os.path.join('video', os.path.splitext(name)[0], frame_filename)
+                            }) 
                         count += 1
                         total_area += current_area
 
@@ -195,6 +195,13 @@ def process_video_task(video_path, output_subdir, name, roadId):
 
 
 # Create your views here.
+
+@api_view(['GET'])
+def test_get(request):
+    records = roadRecord.objects.all()
+    serializer = RoadSerializer(records, many=True)
+    #print(serializer.data)
+    return Response(serializer.data)
 
 # #获取路面图像信息
 @api_view(['POST'])
@@ -254,17 +261,18 @@ def upload_image(request):
             record.disease_type = 0
             record.severity = checkSeverity(record.length, record.area, 0)
             json_data = json.dumps(data, indent=4)
-            record.description = json_data
-            print(json_data)
+            record.description = data
+            #print(json_data)
             record.save()
-            video_url = request.build_absolute_uri(task['rel_url'])
-            # print(video_url)
-            return Response({'title' : types[record.disease_type],
-                            'description': tostring(record.length, record.area),
-                            'severity': risk_type[record.severity],
-                            'position': ('翻斗花园街区' + record.road_id),
-                            "media_type": "video",
-                            "media_url": video_url},
+            r = roadRecord.objects.filter(
+                path = file.name,
+                road_id = roadId,
+            )
+            serializer = RoadSerializer(r)
+            if r.exists() == False:
+                record.save()
+            serializer = RoadSerializer(r, many=True)
+            return Response(serializer.data,
                             status=200)
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
@@ -272,6 +280,7 @@ def upload_image(request):
     # 判断是否为图片文件
     if file.content_type.startswith('image/'):
         try:
+            data = []
             record.file_type = 1
             results = model(
                 local_path,
@@ -311,7 +320,7 @@ def upload_image(request):
             processed_filename = os.path.splitext(file.name)[0]
             #print(processed_filename)
             processed_path = os.path.join(processed_dir, f"{processed_filename}.jpg")
-            print(processed_path)
+            #print(processed_path)
             # 验证文件是否存在
             if not os.path.exists(processed_path):
                 return JsonResponse({'status': 'error', 'message': '处理后的图片未生成'}, status=500)
@@ -319,22 +328,24 @@ def upload_image(request):
             relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', f"{processed_filename}.jpg")
             image_url = request.build_absolute_uri(relative_url)
             print(image_url)
-            record.description = {
-                'title': types[record.disease_type],
-                'position': ('翻斗花园街区' + record.road_id),
-                'severity': risk_type[record.severity],
+            data.append({
+                'disease_type': record.disease_type,
                 'length': record.length,
                 'area': record.area,
-                "media_type": "image",
-                'media_url': file.name
-                }
-            record.save()
-            return Response({'title' : types[record.disease_type],
-                            'description': tostring(record.length, record.area),
-                            'severity': risk_type[record.severity],
-                            'position': ('翻斗花园街区' + record.road_id),
-                            "media_type": "image",
-                            'media_url': image_url},
+                'severity': record.severity,
+                'url': f"results/{processed_filename}.jpg"
+                })
+            record.description = data
+            r = roadRecord.objects.filter(
+                path = file.name,
+                road_id = roadId,
+            )
+            if r.exists() == False:
+                record.save()
+            serializer = RoadSerializer(r, many=True)
+            #print(serializer.data)
+            #video_url = request.build_absolute_uri(task['rel_url'])
+            return Response(serializer.data,
                             status=200)
         
         except Exception as e:
