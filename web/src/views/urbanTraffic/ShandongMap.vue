@@ -60,6 +60,96 @@ export default {
           marker.closeInfoWindow();
         });
       });
+    },
+    async renderWeekFlowChart() {
+      if (this.chart) this.chart.clear();
+      try {
+        // 请求后端真实数据
+        const response = await fetch(`/api/od_analysis/?time_slots=12&analysis_type=${this.analysisType}`);
+        const data = await response.json();
+        if (data.error) {
+          console.error('获取数据失败:', data.error);
+          this.useSimulatedData();
+          return;
+        }
+        this.timeSlots = data.time_slots;
+        this.weekFlowData = data.week_data;
+        this.analysisSummary = data.summary;
+      } catch (error) {
+        console.error('API请求失败:', error);
+        this.useSimulatedData();
+      }
+      const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      const series = weekDays.map((day, index) => ({
+        name: this.weekFlowData[day]?.name || `周${index + 1}`,
+        type: 'bar',
+        data: this.weekFlowData[day]?.data || [],
+        itemStyle: {
+          color: `hsl(${index * 51}, 70%, 60%)`
+        }
+      }));
+      let title = '济南市周客流量时间分布';
+      if (this.analysisType === 'origin') {
+        title = '济南市周起点客流量时间分布';
+      } else if (this.analysisType === 'destination') {
+        title = '济南市周终点客流量时间分布';
+      }
+      const option = {
+        title: {
+          text: title,
+          left: 'center',
+          textStyle: {
+            fontSize: 18,
+            fontWeight: 'bold'
+          }
+        },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: {
+            type: 'shadow'
+          },
+          formatter: function(params) {
+            let result = `${params[0].axisValue}<br/>`;
+            params.forEach(param => {
+              result += `${param.seriesName}: ${param.value} 次<br/>`;
+            });
+            return result;
+          }
+        },
+        legend: {
+          data: series.map(s => s.name),
+          top: 30,
+          left: 'center'
+        },
+        grid: {
+          left: '3%',
+          right: '4%',
+          bottom: '15%',
+          top: '15%',
+          containLabel: true
+        },
+        xAxis: {
+          type: 'category',
+          data: this.timeSlots,
+          name: '时间',
+          nameLocation: 'end',
+          nameGap: 10,
+          axisLabel: {
+            rotate: 45
+          }
+        },
+        yAxis: {
+          type: 'value',
+          name: '打车次数',
+          nameLocation: 'start',
+          nameGap: 10,
+          nameTextStyle: {
+            align: 'left'
+          }
+        },
+        series: series
+      };
+      this.chart.setOption(option, true);
     }
   }
 };
