@@ -13,4 +13,10 @@ urlpatterns = [
     path('weekly_flow_time_distribution/', views.weekly_flow_time_distribution),
     path('od_analysis/', views.od_analysis),
     path('weather_flow_analysis/', views.weather_flow_analysis),
+    path('tasks/<int:task_id>/assign/', views.assign_task),
+    path('my_tasks/', views.my_tasks),
+    path('tasks/<int:task_id>/complete/', views.complete_task),
+    path('tasks/<int:task_id>/images/', views.get_task_images),
+    path('tasks/image/<int:image_id>/delete/', views.delete_task_image),
+    path('tasks/<int:task_id>/mark_finished/', views.mark_finished),
 ]

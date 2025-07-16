@@ -1,26 +1,30 @@
 <template>
-  <div class="subpage-container">
-    <h2>上客热点区域</h2>
-    <div style="margin-bottom:16px; display: flex; align-items: center; gap: 16px;">
-      <label>日期：</label>
-      <input type="date" v-model="selectedDate" :min="minDate" :max="maxDate" @change="onDateChange" />
-      <label>时间区间：</label>
-      <input type="time" v-model="startTime" step="1" @change="onTimeInputChange"> -
-      <input type="time" v-model="endTime" step="1" @change="onTimeInputChange">
-      <button @click="fetchHeatmap">刷新热力图</button>
-      <!-- 新增进度条 -->
-      <div v-if="sliderMax >= 0" style="display:flex;align-items:center;gap:8px;min-width:220px;">
-        <input type="range" :min="0" :max="sliderMax" :step="1" v-model="sliderValue" @input="onSliderChange">
-        <!-- 删除窗口时间段显示 -->
+  <div class="hotspot-bg">
+    <div class="hotspot-card">
+      <h2 class="hotspot-title">上客热点区域</h2>
+      <div class="hotspot-form-row">
+        <label>日期：</label>
+        <input type="date" v-model="selectedDate" :min="minDate" :max="maxDate" @change="onDateChange" class="hotspot-input" />
+        <label>时间区间：</label>
+        <input type="time" v-model="startTime" step="1" @change="onTimeInputChange" class="hotspot-input"> -
+        <input type="time" v-model="endTime" step="1" @change="onTimeInputChange" class="hotspot-input">
+        <button @click="fetchHeatmap" class="hotspot-btn">刷新热力图</button>
+        <div v-if="sliderMax >= 0" class="hotspot-slider-row">
+          <input type="range" :min="0" :max="sliderMax" :step="1" v-model="sliderValue" @input="onSliderChange" class="hotspot-slider">
+        </div>
+      </div>
+      <div ref="chart" class="hotspot-map-card">
+        <div class="hotspot-chart" ref="chartInner"></div>
       </div>
     </div>
-    <div ref="chart" style="width: 100%; height: 600px;"></div>
-    <div v-if="showNoDataDialog" class="dialog-overlay">
-      <div class="dialog-box">
-        <p>暂时没有数据</p>
-        <button @click="showNoDataDialog = false">关闭</button>
+    <transition name="fade">
+      <div v-if="showNoDataDialog" class="hotspot-dialog-overlay">
+        <div class="hotspot-dialog-box">
+          <p>暂时没有数据</p>
+          <button @click="showNoDataDialog = false" class="hotspot-btn">关闭</button>
+        </div>
       </div>
-    </div>
+    </transition>
   </div>
 </template>
 
@@ -84,7 +88,7 @@ export default {
   },
   methods: {
     initChart() {
-      this.chart = echarts.init(this.$refs.chart);
+      this.chart = echarts.init(this.$refs.chartInner);
       this.chart.setOption(this.option);
     },
     getDateParam() {
@@ -206,24 +210,155 @@ export default {
 </script>
 
 <style scoped>
-.subpage-container {
-  padding: 32px;
+.hotspot-bg {
+  min-height: 100vh;
+  background: linear-gradient(120deg, #e0f7fa 0%, #f5fafd 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
 }
-.dialog-overlay {
+.hotspot-card {
+  background: rgba(255,255,255,0.98);
+  border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(2,136,209,0.10);
+  padding: 38px 38px 32px 38px;
+  min-width: 700px;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  position: relative;
+}
+.hotspot-title {
+  text-align: center;
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #0288d1;
+  margin-bottom: 32px;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 12px rgba(2,136,209,0.08);
+}
+.hotspot-form-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.hotspot-form-row label {
+  color: #0288d1;
+  font-weight: 600;
+  font-size: 1.08rem;
+}
+.hotspot-input {
+  padding: 10px 14px;
+  border: 1.5px solid #b3e5fc;
+  border-radius: 10px;
+  font-size: 1.08rem;
+  background: #fafdff;
+  box-shadow: 0 2px 8px rgba(2,136,209,0.04);
+  transition: border 0.2s, box-shadow 0.2s;
+}
+.hotspot-input:focus {
+  border-color: #0288d1;
+  outline: none;
+  box-shadow: 0 0 0 2px #b3e5fc;
+}
+.hotspot-btn {
+  background: linear-gradient(90deg,#00a1d6 0%,#00c6fb 100%);
+  color: white;
+  padding: 10px 28px;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 1.08rem;
+  font-weight: bold;
+  transition: background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 16px rgba(0,161,214,0.10);
+  letter-spacing: 1px;
+}
+.hotspot-btn:hover {
+  background: linear-gradient(90deg,#00b5e5 0%,#00a1d6 100%);
+  box-shadow: 0 6px 24px rgba(0,161,214,0.18);
+}
+.hotspot-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+}
+.hotspot-slider {
+  width: 180px;
+  accent-color: #00a1d6;
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(90deg,#b3e5fc 0%,#00a1d6 100%);
+}
+.hotspot-map-card {
+  width: 100%;
+  height: 600px;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 4px 24px rgba(2,136,209,0.10);
+  border: 2.5px solid #b3e5fc;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  margin-top: 8px;
+  position: relative;
+}
+.hotspot-map-card ::v-deep .BMap_mask,
+.hotspot-map-card ::v-deep .BMap_bmap,
+.hotspot-map-card ::v-deep .BMap_bmap div,
+.hotspot-map-card ::v-deep .BMap_bmap > div {
+  position: static !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  width: 100% !important;
+  height: 100% !important;
+  left: 0 !important;
+  top: 0 !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+}
+.hotspot-chart {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
+.hotspot-dialog-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0,0,0,0.18);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
-.dialog-box {
+.hotspot-dialog-box {
   background: #fff;
-  padding: 32px 48px;
-  border-radius: 12px;
-  box-shadow: 0 2px 16px rgba(0,0,0,0.15);
-  font-size: 20px;
+  padding: 38px 60px;
+  border-radius: 18px;
+  box-shadow: 0 4px 32px rgba(2,136,209,0.15);
+  font-size: 22px;
   text-align: center;
+  min-width: 260px;
+}
+.hotspot-dialog-box p {
+  margin-bottom: 18px;
+  color: #0288d1;
+  font-weight: 600;
+  font-size: 1.18em;
 }
 </style> 

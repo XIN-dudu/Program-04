@@ -16,10 +16,13 @@ import cv2
 from django.db import connection
 from sklearn.cluster import DBSCAN
 import numpy as np
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import permission_classes
+
 
 from .serializers import RoadRecordSerializer
 
-from .models import roadRecord, RepairAssignment
+from .models import roadRecord, RepairAssignment, RepairCompletionImage
 from web.models import UserProfile
 
 pixel_to_meter = 0.001
@@ -349,8 +352,19 @@ def history_get(request):
     示例返回：
         {"success": "ok"}
     """
+    unfinished_only = request.GET.get('unfinished_only')
     records = roadRecord.objects.all()
-    serializer = RoadRecordSerializer(records, many=True)
+    if unfinished_only:
+        filtered = []
+        for record in records:
+            assignments = record.assignments.all()
+            if not assignments:
+                filtered.append(record)
+            else:
+                if any(a.status != 'finished' for a in assignments):
+                    filtered.append(record)
+        records = filtered
+    serializer = RoadRecordSerializer(records, many=True, context={'request': request})
     print(serializer.data)
     return Response(serializer.data)
 
@@ -897,3 +911,111 @@ def weather_flow_analysis(request):
     except Exception as e:
         # 返回空数组，保证前端不报错
         return Response([])
+        
+@api_view(['GET'])
+def my_tasks(request):
+    username = request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    assignments = RepairAssignment.objects.filter(worker=user)
+    tasks = [a.road_record for a in assignments]
+    serializer = RoadRecordSerializer(tasks, many=True, context={'request': request})
+    return Response(serializer.data)
+
+@api_view(['POST'])
+def complete_task(request, task_id):
+    username = request.session.get('username')
+    print('【complete_task调试】session username:', username)
+    if not username:
+        print('【complete_task调试】未登录')
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+        print('【complete_task调试】user.id:', user.id)
+    except UserProfile.DoesNotExist:
+        print('【complete_task调试】用户不存在')
+        return Response({'msg': '用户不存在'}, status=404)
+    # 打印所有分配给该用户的任务id
+    assignments = RepairAssignment.objects.filter(worker=user)
+    print('【complete_task调试】user assignments:', [a.road_record_id for a in assignments])
+    print('【complete_task调试】当前上传 task_id:', task_id)
+    # 打印所有 RepairAssignment 的 worker_id, road_record_id
+    all_assignments = RepairAssignment.objects.all()
+    print('【complete_task调试】所有分配记录:')
+    for a in all_assignments:
+        print(f'  assignment.id={a.id}, worker_id={a.worker_id}, road_record_id={a.road_record_id}')
+    try:
+        assignment = RepairAssignment.objects.get(road_record_id=task_id, worker=user)
+        print('【complete_task调试】assignment found:', assignment.id)
+    except RepairAssignment.DoesNotExist:
+        print('【complete_task调试】assignment not found for user:', user.id, 'task_id:', task_id)
+        return Response({'msg': '无此任务或无权限'}, status=403)
+    files = request.FILES.getlist('file')
+    if not files:
+        print('【complete_task调试】未上传图片')
+        return Response({'msg': '请上传图片'}, status=400)
+    for file in files:
+        RepairCompletionImage.objects.create(assignment=assignment, image=file)
+    image_urls = [request.build_absolute_uri(img.image.url) for img in assignment.completion_images.all()]
+    print('【complete_task调试】上传成功，图片数:', len(image_urls))
+    return Response({'msg': '上传成功', 'image_urls': image_urls})
+
+@api_view(['POST'])
+def delete_task_image(request, image_id):
+    username = request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    try:
+        img = RepairCompletionImage.objects.get(id=image_id)
+        assignment = img.assignment
+        if assignment.worker != user:
+            return Response({'msg': '无权限'}, status=403)
+        img.image.delete(save=False)
+        img.delete()
+        image_urls = [request.build_absolute_uri(i.image.url) for i in assignment.completion_images.all()]
+        return Response({'msg': '删除成功', 'image_urls': image_urls})
+    except RepairCompletionImage.DoesNotExist:
+        return Response({'msg': '图片不存在'}, status=404)
+
+@api_view(['GET'])
+def get_task_images(request, task_id):
+    username = request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    try:
+        assignment = RepairAssignment.objects.get(road_record_id=task_id, worker=user)
+    except RepairAssignment.DoesNotExist:
+        return Response({'msg': '无此任务或无权限'}, status=403)
+    images = assignment.completion_images.all()
+    image_urls = [request.build_absolute_uri(img.image.url) for img in images]
+    image_ids = [img.id for img in images]
+    return Response({'image_urls': image_urls, 'image_ids': image_ids})
+
+@api_view(['POST'])
+def mark_finished(request, task_id):
+    username = request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    try:
+        assignment = RepairAssignment.objects.get(road_record_id=task_id, worker=user)
+    except RepairAssignment.DoesNotExist:
+        return Response({'msg': '无此任务或无权限'}, status=403)
+    assignment.status = 'finished'
+    assignment.save()
+    return Response({'msg': '任务已认证完成'})

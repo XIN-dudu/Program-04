@@ -10,11 +10,12 @@
           <th>严重程度</th>
           <th>图片</th>
           <th>维修工</th>
+          <th>状态</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="task in tasks" :key="task.id">
+        <tr v-for="task in tasks" :key="task.disease_id">
           <td>{{ task.road_id }}</td>
           <td>{{ task.disease_type }}</td>
           <td>{{ task.severity }}</td>
@@ -43,8 +44,12 @@
           </td>
 
           <td>
-            <button @click="assignTask(task)" :disabled="assignLoading[task.id]">
-              {{ assignLoading[task.id] ? '分配中...' : '分配' }}
+            {{ getTaskStatus(task) }}
+          </td>
+
+          <td>
+            <button @click="assignTask(task)" :disabled="assignLoading[task.disease_id]">
+              {{ assignLoading[task.disease_id] ? '分配中...' : '分配' }}
             </button>
           </td>
         </tr>
@@ -70,11 +75,12 @@ const errorMsg = ref('')
 // 加载病害任务
 async function loadTasks() {
   try {
+    // 不加 unfinished_only 参数，显示所有任务
     const res = await axios.get('http://localhost:8000/history/list')
     // 多选分配，assigned_person_ids为数组
     tasks.value = res.data.map(item => ({
       ...item,
-      assigned_person_ids: [],
+      assigned_person_ids: item.assigned_person_ids || [],
       dropdownOpen: false // 新增属性，控制下拉框的显示
     }))
   } catch (error) {
@@ -103,16 +109,17 @@ async function assignTask(task) {
     errorMsg.value = '请选择至少一位维修工'
     return
   }
-  assignLoading[task.id] = true
+  assignLoading[task.disease_id] = true
   try {
-    await axios.post(`/api/tasks/${task.id}/assign/`, {
+    await axios.post(`/api/tasks/${task.disease_id}/assign/`, {
       assigned_person_ids: task.assigned_person_ids
     }, { withCredentials: true })
-    successMsg.value = `任务 ${task.id} 分配成功`
+    successMsg.value = `任务 ${task.disease_id} 分配成功`
+    await loadTasks() // 分配成功后刷新
   } catch (error) {
-    errorMsg.value = `任务 ${task.id} 分配失败`
+    errorMsg.value = `任务 ${task.disease_id} 分配失败`
   } finally {
-    assignLoading[task.id] = false
+    assignLoading[task.disease_id] = false
   }
 }
 
@@ -143,6 +150,19 @@ function removeWorker(task, id) {
 }
 function clearAll(task) {
   task.assigned_person_ids = []
+}
+
+function getTaskStatus(task) {
+  // 优先用后端 assignment_status 字段（针对当前用户或管理员）
+  if (task.assignment_status === 'finished') return '已完成';
+  // 没有分配维修工
+  if (!task.assigned_person_ids || task.assigned_person_ids.length === 0) return '未分配';
+  // 没有 assignments 字段，无法判断完成情况，默认已分配
+  if (!task.assignments || !task.assignments.length) return '已分配';
+  // 只要有一个不是finished就已分配
+  if (task.assignments.some(a => a.status !== 'finished')) return '已分配';
+  // 全部 finished
+  return '已完成';
 }
 
 onMounted(() => {

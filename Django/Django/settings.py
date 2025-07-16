@@ -153,8 +153,7 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
 ]
 SESSION_COOKIE_SAMESITE = None
-# 可选：设置会话安全
-SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True  
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # 关闭浏览器自动退出登录
 
 # 可选：Swagger 自定义配置 

@@ -39,9 +39,15 @@ class RepairAssignment(models.Model):
     worker = models.ForeignKey('web.UserProfile', on_delete=models.CASCADE, related_name='worker_assignments')
     assigned_time = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, default='pending')  # 可选：pending/finished等
+    completion_image = models.CharField(max_length=255, blank=True, null=True)  # 新增：维修完成图片
     
     class Meta:
         unique_together = ('road_record', 'worker')
     
     def __str__(self):
         return f"{self.road_record.disease_id} -> {self.worker.username} ({self.status})"
+
+class RepairCompletionImage(models.Model):
+    assignment = models.ForeignKey('RepairAssignment', on_delete=models.CASCADE, related_name='completion_images')
+    image = models.ImageField(upload_to='repair_complete/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)

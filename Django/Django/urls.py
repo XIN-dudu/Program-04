@@ -38,9 +38,11 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path('', include('roadMonitor.urls')),
     path('api/', include('web.urls')),  # 以 /api/ 前缀接入 web 应用接口
+    path('api/', include('roadMonitor.urls')),
     # path('', include('roadMonitor.urls')),  # 可保留或注释
     path('swagger/', schema_view.with_ui('swagger',  cache_timeout=0)),
     path('redoc/', schema_view.with_ui('redoc',  cache_timeout=0)),
+    
 ]
 
 # 在开发环境中，为媒体文件提供服务
