@@ -261,12 +261,14 @@ def upload_image(request):
             record.description = data
             #print(json_data)
             record.save()
-            records = roadRecord.objects.filter(
-                path = record.path,
+            r = roadRecord.objects.filter(
+                path = file.name,
+                road_id = roadId,
             )
-            serializer = RoadSerializer(records)
-            #video_url = request.build_absolute_uri(task['rel_url'])
-
+            serializer = RoadSerializer(r)
+            if r.exists() == False:
+                record.save()
+            serializer = RoadSerializer(r, many=True)
             return Response(serializer.data,
                             status=200)
         except Exception as e:
@@ -315,7 +317,7 @@ def upload_image(request):
             processed_filename = os.path.splitext(file.name)[0]
             #print(processed_filename)
             processed_path = os.path.join(processed_dir, f"{processed_filename}.jpg")
-            print(processed_path)
+            #print(processed_path)
             # 验证文件是否存在
             if not os.path.exists(processed_path):
                 return JsonResponse({'status': 'error', 'message': '处理后的图片未生成'}, status=500)
@@ -331,13 +333,15 @@ def upload_image(request):
                 'url': f"results/{processed_filename}.jpg"
                 })
             record.description = data
-            record.save()
-            records = roadRecord.objects.filter(
-                path = record.path,
+            r = roadRecord.objects.filter(
+                path = file.name,
+                road_id = roadId,
             )
-            serializer = RoadSerializer(records)
+            if r.exists() == False:
+                record.save()
+            serializer = RoadSerializer(r, many=True)
+            #print(serializer.data)
             #video_url = request.build_absolute_uri(task['rel_url'])
-
             return Response(serializer.data,
                             status=200)
         
