@@ -23,7 +23,7 @@
           <router-link to="/liveness" class="logo-text">活体检测</router-link>
         </div>
         <div>
-          <router-link to="/log" class="logo-text">系统日志</router-link>
+          <router-link to="/systemlog" class="logo-text">系统日志</router-link>
         </div>
         <div class="user-section">
           <router-link v-if="isAdmin" to="/user-manage" class="logo-text" style="margin-right:18px;">用户管理</router-link>

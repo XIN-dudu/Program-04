@@ -1188,11 +1188,13 @@ def log_list(request):
     level = request.query_params.get('level')
     start_date = request.query_params.get('start_date')
     end_date = request.query_params.get('end_date')
-
+    username = request.query_params.get('username')
     # 初始化查询集
     logs = SystemLog.objects.all().select_related('user')
 
     # 根据参数过滤
+    if username:
+        logs = logs.filter(user__username=username)
     if level:
         logs = logs.filter(level=level)
 
