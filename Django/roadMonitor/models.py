@@ -29,3 +29,4 @@ class roadRecord(models.Model):
         (1, 'IMAGE'),   
     ]
     file_type = models.IntegerField(choices=FILE_TYPE_CHOICES, null=False, blank=False)
+    description = models.JSONField(null=False, blank=False)

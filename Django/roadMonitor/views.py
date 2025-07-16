@@ -33,9 +33,42 @@ risk_type = ['安全', '低', '中', '高']
 
 model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
 
+def checkSeverity(length, area, type):
+    sum = 0.0
+    if type == 0 or type == 1:
+        sum += 5
+    else:
+        sum += type * 5
+    sum += length
+    sum += area
+    if sum <= 10 or type == 0 or type == 5:
+        return 0
+    elif sum <= 30 and sum > 10:
+        return 1
+    elif sum > 30 and sum <= 50:
+        return 2
+    return 3
+
+def getLabel(label):
+    type = 0
+    if label == "D00":
+        type = 1
+    elif label == "D10":
+        type = 2
+    elif label == "D20":
+        type = 3
+    elif label == "D40":
+        type = 4
+    elif label == "repair":
+        type = 5
+    return type
+
 def tostring(length, area):
     return f'裂纹长度:{length:.2f}米\n裂纹面积:{area:.2f}平方米'
 
+def checkChange(length, area, type):
+
+    return True
 def calculate_dimensions(boxes):
     """计算检测框的尺寸信息"""
     max_length = 0.0
@@ -148,13 +181,14 @@ def upload_image(request):
     record.road_id = roadId
     record.detection_time = datetime.now()
     record.path = file.name
-    record.severity = 1
 
     # 保存
     subdir = 'road'
     save_path = os.path.join(subdir, 'upload', file.name)
-    filename = default_storage.save(save_path, file)
-    local_path = default_storage.path(filename)
+    if not default_storage.exists(save_path):
+        default_storage.save(save_path, file)
+    local_path = default_storage.path(save_path)
+    print(local_path)
     # 判断是否为视频文件
     if file.content_type.startswith('video/'):
         try:
@@ -162,8 +196,9 @@ def upload_image(request):
             task = process_video_task(local_path, 'road/results', file.name)
             # 构建视频访问URL
             res = request.build_absolute_uri(task)
-            record.length = res['max_length'] * 0.01  # 应用转换系数
-            record.area = res['total_area'] * (0.01**2)
+            record.length = res['max_length'] * 0.001  # 应用转换系数
+            record.area = res['total_area'] * (0.001**2)
+            record.severity = checkSeverity(record.length, record.area, 1)
             record.save()
             video_url = res['rel_url']
             print(video_url)
@@ -176,7 +211,7 @@ def upload_image(request):
                             status=200)
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
- 
+
     # 判断是否为图片文件
     if file.content_type.startswith('image/'):
         try:
@@ -189,6 +224,9 @@ def upload_image(request):
                 name='results',    # 创建results子目录
                 exist_ok=True
             )
+            record.length = 0.0
+            record.area = 0.0
+            record.disease_type = 0
             if results and len(results[0].boxes) > 0:
                 # 获取检测结果
                 boxes = results[0].boxes
@@ -204,28 +242,13 @@ def upload_image(request):
                 max_length, total_area = calculate_dimensions(boxes)
                 
                 # 应用物理尺寸转换
-                pixel_to_meter = 0.003
+                pixel_to_meter = 0.001
                 record.length = max_length * pixel_to_meter
                 record.area = total_area * (pixel_to_meter**2)
+                record.disease_type = getLabel(label)
 
-                # 根据标签生成动态响应
-                if label == "D00":
-                    record.disease_type = 1
-                elif label == "D10":
-                    record.disease_type = 2
-                elif label == "D20":
-                    record.disease_type = 3
-                elif label == "D40":
-                    record.disease_type = 4
-                elif label == "repair":
-                    record.disease_type = 5
-                    record.severity = 0
-            else:
-                record.length = 0.0
-                record.area = 0.0
-                record.disease_type = 0
-                record.severity = 0
-            record.save()
+            # 根据标签生成动态响应
+            record.severity = checkSeverity(record.length, record.area, record.disease_type)
             # 获取处理后的图片路径
             processed_dir = os.path.join(settings.MEDIA_ROOT, subdir, 'results')
             #print(processed_dir)
@@ -240,6 +263,16 @@ def upload_image(request):
             relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', f"{processed_filename}.jpg")
             image_url = request.build_absolute_uri(relative_url)
             print(image_url)
+            record.description = {
+                'title': types[record.disease_type],
+                'position': ('翻斗花园街区' + record.road_id),
+                'severity': risk_type[record.severity],
+                'length': record.length,
+                'area': record.area,
+                "media_type": "image",
+                'media_url': file.name
+                }
+            record.save()
             return Response({'title' : types[record.disease_type],
                             'description': tostring(record.length, record.area),
                             'severity': risk_type[record.severity],
