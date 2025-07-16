@@ -18,8 +18,10 @@ class RoadSerializer(serializers.ModelSerializer):
         
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        if isinstance(data['description'], list):
-            for item in data['description']:
+        # 安全访问 description 字段
+        desc = data.get('description')
+        if isinstance(desc, list):
+            for item in desc:
                 # 将数字转换为文字描述
                 severity_mapping = {v[0]: v[1] for v in roadRecord.SEVERITY_CHOICES}
                 disease_type_mapping = {v[0]: v[1] for v in roadRecord.DISEASE_TYPE_CHOICES}
@@ -83,8 +85,10 @@ class RoadRecordSerializer(serializers.ModelSerializer):
         
         data['detection_date'] = instance.detection_time.strftime("%Y-%m-%d")
 
-        if isinstance(data['description'], list):
-            for item in data['description']:
+        # 安全访问 description 字段
+        desc = data.get('description')
+        if isinstance(desc, list):
+            for item in desc:
                 # 将数字转换为文字描述
                 severity_mapping = {v[0]: v[1] for v in roadRecord.SEVERITY_CHOICES}
                 disease_type_mapping = {v[0]: v[1] for v in roadRecord.DISEASE_TYPE_CHOICES}
