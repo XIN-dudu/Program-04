@@ -398,26 +398,34 @@ def history_delete(request, diseaseId):
         
         if not records.exists():
             return Response({'error': '记录不存在'}, status=404)
- 
-        # 删除物理文件
+        
+        import shutil
+
         for record in records:
             if record.path:
                 try:
-                    file_path = os.path.join(settings.MEDIA_ROOT, 'road/upload', record.path)
-                    print(file_path)
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                    file_path = os.path.join(settings.MEDIA_ROOT, 'road' , 'results', record.path)
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                    file_path = os.path.join(settings.MEDIA_ROOT, 'road' , 'results', f'{os.path.splitext(record.path)[0]}.jpg')
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                    if record.file_type == 0:
-                        print(1)
+                    # 删除上传文件
+                    upload_path = os.path.join(settings.MEDIA_ROOT, 'road/upload', record.path)
+                    if os.path.exists(upload_path):
+                        os.remove(upload_path)
+
+                    # 删除检测结果图像（原始名）
+                    result_path = os.path.join(settings.MEDIA_ROOT, 'road/results', record.path)
+                    if os.path.exists(result_path):
+                        os.remove(result_path)
+
+                    # 删除检测结果图像（.jpg版本）
+                    jpg_result = os.path.join(settings.MEDIA_ROOT, 'road/results', f'{os.path.splitext(record.path)[0]}.jpg')
+                    if os.path.exists(jpg_result):
+                        os.remove(jpg_result)
+
+                    # 删除视频处理结果目录
+                    video_dir = os.path.join(settings.MEDIA_ROOT, 'road/video', f'{os.path.splitext(record.path)[0]}')
+                    if os.path.exists(video_dir) and os.path.isdir(video_dir):
+                        shutil.rmtree(video_dir)
+
                 except Exception as e:
                     print(f"文件删除失败: {str(e)}")
- 
         # 删除数据库记录
         records.delete()
  
