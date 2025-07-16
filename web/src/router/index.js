@@ -32,6 +32,7 @@ const routes = [
   },
   { path: '/history', component: () => import('../views/History.vue'), meta: { requiresAuth: true } },
   { path: '/login', component: () => import('../views/Login.vue') },
+  { path: '/repair', component: () => import('../views/Repair.vue') },
   { path: '/register', component: () => import('../views/Register.vue') },
   { path: '/face-recognition', component: () => import('../views/FaceRecognition.vue'), meta: { requiresAuth: true } },
   { path: '/liveness', component: () => import('../views/LivenessDetection.vue'), meta: { requiresAuth: true } },
