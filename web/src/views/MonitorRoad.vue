@@ -36,12 +36,18 @@
           <div v-for="(item, index) in results" :key="index" class="result-section">
             <h3 style="margin-top: 10px">道路编号：{{ item.road_id }}</h3>
 
+            <!-- 显示带框整图 -->
+            <img v-if="item.full_image_base64" :src="item.full_image_base64" alt="带框检测图"
+              style="max-width: 100%; margin-bottom: 10px;" />
+
             <div v-for="(desc, i) in item.description" :key="i" class="result-card">
               <p><strong>病害类型：</strong>{{ desc.disease_type }}</p>
               <p><strong>危险等级：</strong>{{ desc.severity }}</p>
               <p><strong>面积比例：</strong>{{ desc.area.toFixed(4) }}</p>
               <p><strong>裂缝长度：</strong>{{ desc.length.toFixed(4) }}</p>
-              <img v-if="desc.url" :src="desc.url.replace(/\\/g, '/')" alt="检测图" />
+              <img v-if="desc.image_base64" :src="desc.image_base64" alt="检测裁剪图" />
+              <img v-else-if="desc.url" :src="desc.url.replace(/\\/g, '/')" alt="检测裁剪图" />
+
             </div>
           </div>
         </div>
@@ -74,6 +80,8 @@ const mediaRecorder = ref(null)
 const recordedChunks = ref([])
 
 let autoStopTimer = null
+let frameCaptureTimer = null
+let frameCounter = 0
 
 const openCamera = () => {
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -98,17 +106,63 @@ const openCamera = () => {
           }
         })
 
-        clearTimeout(autoStopTimer)
-        autoStopTimer = setTimeout(() => {
-          alert('摄像头使用时间到，自动关闭')
-          stopCamera()
-        }, 3 * 60 * 1000)
+        // 自动抓图逻辑
+        frameCounter = 0
+        clearInterval(frameCaptureTimer)
+        frameCaptureTimer = setInterval(() => {
+          if (!videoElement.value || videoElement.value.readyState < 2) return
+          frameCounter++
+          if (frameCounter % 10 === 0) {
+            captureFrameAndSend()
+          }
+        }, 100)
       })
       .catch(error => {
         console.error('摄像头访问失败:', error)
       })
   }
 }
+
+const captureFrameAndSend = () => {
+  const video = videoElement.value
+  if (!video) return
+
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth || 640
+  canvas.height = video.videoHeight || 480
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  canvas.toBlob(async (blob) => {
+    if (!blob) return
+    const file = new File([blob], `frame_${Date.now()}.jpg`, { type: 'image/jpeg' })
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('roadId', roadId.value || 'unknown')
+
+    try {
+      const res = await axios.post('http://localhost:8000/road/streamFrame', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        withCredentials: true
+      })
+
+      const data = res.data
+      if (!data || !data.description || !Array.isArray(data.description)) return
+
+      // 每一帧结果都作为新的 result 添加
+      results.value.unshift({
+        road_id: `${data.road_id}（帧时间：${new Date().toLocaleTimeString()}）`,
+        description: data.description,
+        full_image_base64: data.full_image_base64 || ''
+      })
+
+    } catch (error) {
+      console.warn('帧上传失败:', error)
+    }
+  }, 'image/jpeg')
+}
+
 
 const startRecording = () => {
   if (!mediaStream.value) {
@@ -212,6 +266,9 @@ const takePhoto = () => {
 
 const stopCamera = () => {
   stop()
+  clearInterval(frameCaptureTimer)
+  frameCaptureTimer = null
+
   if (mediaPreviewUrl.value) {
     URL.revokeObjectURL(mediaPreviewUrl.value)
     mediaPreviewUrl.value = ''
@@ -239,6 +296,8 @@ const stop = () => {
     mediaStream.value.getTracks().forEach(track => track.stop())
     mediaStream.value = null
   }
+  clearInterval(frameCaptureTimer)
+  frameCaptureTimer = null
 }
 
 const triggerUpload = () => {
@@ -297,7 +356,8 @@ const detectIssues = async () => {
     })
     results.value = response.data.map(item => ({
       road_id: item.road_id,
-      description: item.description
+      description: item.description,
+      full_image_base64: item.full_image_base64 || ''
     }))
   } catch (err) {
     console.error('上传失败:', err)
@@ -388,15 +448,15 @@ button:disabled {
   flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100%; /* 确保撑满高度 */
-  max-height: 600px; /* 根据需要调整固定高度 */
-  overflow: hidden;  /* 防止外部溢出 */
+  height: 100%;
+  max-height: 600px;
+  overflow: hidden;
 }
 
 .result-list {
   flex: 1;
   overflow-y: auto;
-  padding-right: 6px; /* 给滚动条腾出空间 */
+  padding-right: 6px;
 }
 
 .result-header {
@@ -416,14 +476,16 @@ button:disabled {
   margin-top: 10px;
   border-radius: 5px;
 }
-
+.result-section img,
 .result-card img {
-  margin-top: 10px;
-  width: 100%;
+  max-width: 100%;
+  max-height: 300px; /* 限制最大高度 */
   height: auto;
-  max-height: 300px;
   object-fit: contain;
   border: 1px solid #ccc;
   border-radius: 6px;
+  margin-top: 10px;
+  display: block;
 }
+
 </style>

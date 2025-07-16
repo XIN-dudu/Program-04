@@ -1,4 +1,6 @@
 import json
+import traceback
+import uuid
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -18,6 +20,8 @@ from sklearn.cluster import DBSCAN
 import numpy as np
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
+
+from .yolo_model import run_detection_in_memory
 
 
 from .serializers import RoadRecordSerializer, RoadSerializer
@@ -350,6 +354,30 @@ def upload_image(request):
         
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+# #获取监控录像信息，每10帧获取一次
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def upload_stream(request):
+    uploaded_file = request.FILES.get('file')
+    road_id = request.POST.get('roadId', 'unknown')
+
+    if not uploaded_file:
+        return Response({'error': '未上传文件'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        detections, full_image_base64 = run_detection_in_memory(uploaded_file)
+
+        return Response({
+            "road_id": road_id,
+            "description": detections,
+            "full_image_base64": full_image_base64
+        }, status=200)
+
+    except Exception as e:
+        traceback.print_exc()  # 打印错误堆栈，便于调试
+        return Response({'error': f'检测失败: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 @api_view(['GET'])
