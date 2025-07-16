@@ -418,7 +418,7 @@ onBeforeUnmount(() => {
 }
 
 .media-display {
-  height: 400px;
+  height: 600px;
   background: #f0f0f0;
   border: 2px dashed #aaa;
   display: flex;
