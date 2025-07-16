@@ -5,46 +5,8 @@ import tempfile
 from django.utils import timezone
 from web.models import AlertEvent, SystemLog, UserProfile
 from django.http import JsonResponse
-
 from rest_framework.decorators import api_view
 
- print("web.views.py loaded")
-
-@api_view(['POST'])
-@parser_classes([MultiPartParser, FormParser])
-def liveness_and_face_verify(request):
-    print("liveness_and_face_verify called")
-    user_id = request.data.get('user_id') or request.POST.get('user_id')
-    video_file = request.FILES.get('video')
-    if not video_file or not user_id:
-        return JsonResponse({'success': False, 'msg': '缺少参数'}, status=400)
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as tmp_video:
-        for chunk in video_file.chunks():
-            tmp_video.write(chunk)
-        video_path = tmp_video.name
-    try:
-        liveness_pass = call_baidu_liveness_api(video_path, username=user_id)
-        if not liveness_pass:
-            AlertEvent.objects.create(user_id=user_id, alert_type='活体检测失败', alert_time=timezone.now())
-            SystemLog.objects.create(user_id=user_id, action='活体检测失败', log_time=timezone.now())
-            return JsonResponse({'success': False, 'msg': '活体检测未通过'})
-        images = extract_frames(video_path, num_frames=3)
-        verify_success = False
-        for img in images:
-            if call_face_verify_api(img, user_id):
-                verify_success = True
-                break
-        if verify_success:
-            SystemLog.objects.create(user_id=user_id, action='人脸识别通过', log_time=timezone.now())
-            return JsonResponse({'success': True, 'msg': '验证通过'})
-        else:
-            AlertEvent.objects.create(user_id=user_id, alert_type='人脸识别失败', alert_time=timezone.now())
-            SystemLog.objects.create(user_id=user_id, action='人脸识别失败', log_time=timezone.now())
-            return JsonResponse({'success': False, 'msg': '人脸识别未通过'})
-    finally:
-        import os
-        if os.path.exists(video_path):
-            os.remove(video_path)
 
 def extract_frames(video_path, num_frames=3):
     cap = cv2.VideoCapture(video_path)

@@ -9,9 +9,21 @@
         </div>
       </div>
       <div class="profile-info-card-light">
+        <h2 class="profile-title">个人信息</h2>
         <div class="info-row-light"><span class="info-label-light">用户名</span><span class="info-value-center">{{ user.username }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
         <div class="info-row-light"><span class="info-label-light">电子邮箱</span><span class="info-value-center">{{ user.email }}</span><button class="edit-btn-light" @click="showEditEmail = true">编辑</button></div>
-        <div class="info-row-light"><span class="info-label-light">手机号</span><span class="info-value-center">{{ user.phone || '未填写' }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
+        <div class="info-row-light">
+          <span class="info-label-light">手机号</span>
+          <span class="info-value-center">{{ user.phone }}</span>
+          <button class="edit-btn-light" @click="showPhoneEdit = true">编辑</button>
+        </div>
+        <el-dialog title="修改手机号" :visible.sync="showPhoneEdit" width="350px">
+          <el-input v-model="editPhone" placeholder="请输入新手机号" maxlength="20" />
+          <span slot="footer" class="dialog-footer">
+            <el-button @click="showPhoneEdit = false">取消</el-button>
+            <el-button type="primary" style="background:#e3f2fd;color:#1890ff;border:none;" @click="submitPhoneEdit">保存</el-button>
+          </span>
+        </el-dialog>
         <div class="info-row-light permission-row-fix"><span class="info-label-light">权限</span><span class="info-value-center permission-value">{{ permissionText }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
         <div class="info-row-light no-border info-row-password-btn"><button class="edit-btn-light left-btn" @click="showEditAll = true">修改密码</button></div>
       </div>
@@ -85,7 +97,9 @@ export default {
       showEditAll: false,
       editNick: '',
       newPassword: '',
-      confirmPassword: ''
+      confirmPassword: '',
+      showPhoneEdit: false,
+      editPhone: '',
     }
   },
   computed: {
@@ -200,6 +214,20 @@ export default {
         alert(res.data.msg);
         this.showEditAll = false;
       });
+    },
+    submitPhoneEdit() {
+      if (!this.editPhone) {
+        alert('请输入新手机号');
+        return;
+      }
+      axios.post('http://localhost:8000/api/update_profile/', {
+        username: this.user.username,
+        phone: this.editPhone
+      }).then(res => {
+        alert(res.data.msg);
+        this.user.phone = this.editPhone;
+        this.showPhoneEdit = false;
+      });
     }
   }
 }
@@ -208,27 +236,25 @@ export default {
 <style scoped>
 .profile-bg-light {
   min-height: 100vh;
-  background: linear-gradient(120deg, #e0eafc 0%, #cfdef3 100%);
+  background: linear-gradient(135deg, #e8f0ff 0%, #f8fafc 100%);
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 40px;
+  padding-top: 60px;
 }
 .profile-card-light {
-  background: rgba(255,255,255,0.82);
-  border-radius: 18px;
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.10);
-  width: 480px;
-  margin-bottom: 40px;
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 6px 32px rgba(0,0,0,0.10);
+  min-width: 420px;
+  max-width: 480px;
+  margin: 0 auto;
   overflow: hidden;
 }
 .profile-header-light {
+  background: linear-gradient(90deg, #ffb86c 0%, #ffd580 100%);
+  height: 110px;
   position: relative;
-  background: #f7b267;
-  height: 120px;
-  display: flex;
-  align-items: flex-end;
-  padding: 0 0 0 32px;
 }
 .profile-banner-light {
   position: absolute;
@@ -237,18 +263,20 @@ export default {
   z-index: 0;
 }
 .profile-avatar-block {
-  position: relative;
-  z-index: 1;
-  margin-bottom: -44px;
+  position: absolute;
+  left: 50%;
+  top: 80px;
+  transform: translateX(-50%);
+  z-index: 2;
 }
 .avatar-light {
-  width: 88px;
-  height: 88px;
+  width: 110px;
+  height: 110px;
   border-radius: 50%;
-  border: 5px solid #fff;
+  border: 6px solid #fff;
   background: #f4f4f4;
   object-fit: cover;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.13);
   cursor: pointer;
 }
 .profile-nick-block-row {
@@ -285,20 +313,30 @@ export default {
 }
 .edit-btn-light:hover {
   background: #40a9ff;
+  color: #fff;
 }
 .profile-info-card-light {
-  background: rgba(255,255,255,0.92);
-  border-radius: 12px;
-  margin: 32px 24px 24px 24px;
-  padding: 24px 18px;
+  background: rgba(255,255,255,0.97);
+  border-radius: 18px;
+  margin: 60px 24px 24px 24px;
+  padding: 36px 24px 28px 24px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.profile-title {
+  font-size: 2em;
+  color: #222;
+  font-weight: 700;
+  margin-bottom: 28px;
+  text-align: left;
+  letter-spacing: 1px;
 }
 .info-row-light {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 0;
-  border-bottom: 1px solid #e0eafc;
+  padding: 18px 0;
+  border-bottom: 1.5px solid #e0eafc;
+  font-size: 1.13em;
 }
 .info-row-light:last-child {
   border-bottom: none;
@@ -408,8 +446,18 @@ input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focu
 }
 .left-btn {
   margin-left: 0;
-  margin-right: auto;
-  display: block;
+  margin-top: 8px;
+  width: 100%;
+  font-size: 1.08em;
+  padding: 10px 0;
+  border-radius: 8px;
+  background: #1890ff;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(24,144,255,0.08);
+}
+.no-border {
+  border-bottom: none !important;
 }
 .info-value-center {
   flex: 1;

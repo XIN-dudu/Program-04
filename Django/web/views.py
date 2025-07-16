@@ -795,6 +795,7 @@ def update_profile(request):
     new_password = request.data.get('password')
     email_code = request.data.get('email_code')
     new_username = request.data.get('new_username')  # 新增用户名修改字段
+    new_phone = request.data.get('phone') # 新增手机号修改字段
     if not username:
         return Response({'msg': '用户名不能为空'}, status=400)
     try:
@@ -827,6 +828,13 @@ def update_profile(request):
             if UserProfile.objects.filter(email=aes_encrypt_text(new_email)).exclude(username=user.username).exists():
                 return Response({'msg': '该邮箱已被其他用户占用'}, status=400)
             user.email = aes_encrypt_text(new_email)
+            updated = True
+        # 手机号修改（无需验证码）
+        if new_phone and new_phone != user.phone:
+            # 可选：唯一性校验
+            if UserProfile.objects.filter(phone=new_phone).exclude(username=user.username).exists():
+                return Response({'msg': '该手机号已被其他用户占用'}, status=400)
+            user.phone = new_phone
             updated = True
         if new_password:
             user.password = aes_encrypt_text(new_password)

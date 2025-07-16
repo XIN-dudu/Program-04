@@ -13,16 +13,16 @@
         <div>
           <router-link to="/urbanTraffic" class="logo-text">城市交通</router-link>
         </div>
-        <div>
+        <div v-if="isAdmin">
           <router-link to="/history" class="logo-text">历史回放</router-link>
         </div>
-        <div>
+        <div v-if="isAdmin">
           <router-link to="/face-recognition" class="logo-text">人脸识别</router-link>
         </div>
-        <div>
-          <router-link to="/liveness" class="logo-text">活体检测</router-link>
+        <div v-if="isAdmin">
+          <router-link to="/liveness" class="logo-text">身份验证</router-link>
         </div>
-        <div>
+        <div v-if="isAdmin">
           <router-link to="/systemlog" class="logo-text">系统日志</router-link>
         </div>
         <div class="user-section">
@@ -30,7 +30,7 @@
           <router-link v-if="isAdmin" to="/maintaince" class="logo-text" style="margin-right:18px;">维修分配</router-link>
           <router-link to="/profile" class="username clickable">{{ username }}</router-link>
           <button @click="logout" class="logout-btn">退出</button>
-          <router-link v-if="isRepairMan" to="/repair" class="logo-text" style="margin-right:18px;">你的任务</router-link>
+          <router-link v-if="isRepairMan" to="/repair" class="logo-text" style="margin-right:18px;">维修任务</router-link>
         </div>
       </div>
     </header>

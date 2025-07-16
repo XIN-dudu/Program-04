@@ -1,63 +1,60 @@
 <template>
-  <div class="container">
-    <h2>病害任务分配给维修工</h2>
-
-    <table>
-      <thead>
-        <tr>
-          <th>道路编号</th>
-          <th>病害类型</th>
-          <th>严重程度</th>
-          <th>图片</th>
-          <th>维修工</th>
-          <th>状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="task in tasks" :key="task.disease_id">
-          <td>{{ task.road_id }}</td>
-          <td>{{ task.disease_type }}</td>
-          <td>{{ task.severity }}</td>
-          <td><a :href="task.url" target="_blank">查看</a></td>
-
-          <td>
-            <div class="custom-multiselect" @click="toggleDropdown(task)" :tabindex="0" @blur="closeDropdown(task)">
-              <div class="selected-tags">
-                <span v-for="id in task.assigned_person_ids" :key="id" class="tag">
-                  {{ getUsernameById(id) }}
-                  <span class="remove-tag" @click.stop="removeWorker(task, id)">&times;</span>
-                </span>
-                <span v-if="!task.assigned_person_ids.length" class="placeholder">请选择维修工</span>
-              </div>
-              <div class="dropdown" v-show="task.dropdownOpen">
-                <div v-for="user in repairUsers" :key="user.id" class="dropdown-item" @click.stop="toggleWorker(task, user.id)">
-                  <input type="checkbox" :checked="task.assigned_person_ids.includes(user.id)" />
-                  <span>{{ user.username }}</span>
+  <div class="maintain-bg">
+    <div class="maintain-container">
+      <h2 class="maintain-title">维修任务分配</h2>
+      <table class="maintain-table">
+        <thead>
+          <tr>
+            <th>道路编号</th>
+            <th>病害类型</th>
+            <th>严重程度</th>
+            <th>图片</th>
+            <th>维修工</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="task in tasks" :key="task.disease_id">
+            <td>{{ task.road_id }}</td>
+            <td>{{ task.disease_type }}</td>
+            <td>{{ task.severity }}</td>
+            <td><a :href="task.url" target="_blank">查看</a></td>
+            <td>
+              <div class="custom-multiselect" @click="toggleDropdown(task)" :tabindex="0" @blur="closeDropdown(task)">
+                <div class="selected-tags">
+                  <span v-for="id in task.assigned_person_ids" :key="id" class="tag">
+                    {{ getUsernameById(id) }}
+                    <span class="remove-tag" @click.stop="removeWorker(task, id)">&times;</span>
+                  </span>
+                  <span v-if="!task.assigned_person_ids.length" class="placeholder">请选择维修工</span>
                 </div>
-                <div class="dropdown-actions">
-                  <button type="button" @click.stop="clearAll(task)">清除</button>
-                  <button type="button" @click.stop="closeDropdown(task)">关闭</button>
+                <div class="dropdown" v-show="task.dropdownOpen">
+                  <div v-for="user in repairUsers" :key="user.id" class="dropdown-item" @click.stop="toggleWorker(task, user.id)">
+                    <input type="checkbox" :checked="task.assigned_person_ids.includes(user.id)" />
+                    <span>{{ user.username }}</span>
+                  </div>
+                  <div class="dropdown-actions">
+                    <button type="button" @click.stop="clearAll(task)">清除</button>
+                    <button type="button" @click.stop="closeDropdown(task)">关闭</button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </td>
-
-          <td>
-            {{ getTaskStatus(task) }}
-          </td>
-
-          <td>
-            <button @click="assignTask(task)" :disabled="assignLoading[task.disease_id]">
-              {{ assignLoading[task.disease_id] ? '分配中...' : '分配' }}
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div v-if="successMsg" class="message success">{{ successMsg }}</div>
-    <div v-if="errorMsg" class="message error">{{ errorMsg }}</div>
+            </td>
+            <td>
+              {{ getTaskStatus(task) }}
+            </td>
+            <td>
+              <button class="assign-btn" @click="assignTask(task)" :disabled="assignLoading[task.disease_id]">
+                {{ assignLoading[task.disease_id] ? '分配中...' : '分配' }}
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="successMsg" class="message success">{{ successMsg }}</div>
+      <div v-if="errorMsg" class="message error">{{ errorMsg }}</div>
+    </div>
   </div>
 </template>
 
@@ -172,6 +169,71 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.maintain-bg {
+  min-height: 100vh;
+  background: #f7f8fa;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 40px;
+}
+.maintain-container {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  padding: 28px 28px 18px 28px;
+  min-width: 900px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.maintain-title {
+  text-align: left;
+  font-size: 22px;
+  color: #222;
+  font-weight: 600;
+  margin-bottom: 18px;
+  letter-spacing: 1px;
+}
+.maintain-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: none;
+}
+.maintain-table th, .maintain-table td {
+  padding: 10px 8px;
+  text-align: center;
+  border-bottom: 1px solid #ececec;
+  font-size: 15px;
+}
+.maintain-table th {
+  background: #f5f7fa;
+  color: #3a5a8c;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.maintain-table tr:last-child td {
+  border-bottom: none;
+}
+.assign-btn {
+  background: #fff;
+  color: #2476e8;
+  border: 1px solid #2476e8;
+  border-radius: 4px;
+  padding: 5px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  box-shadow: none;
+}
+.assign-btn:hover {
+  background: #2476e8;
+  color: #fff;
+}
+/* 保持原有多选下拉样式不变 */
 .container {
   max-width: 1200px;
   margin: 30px auto;
