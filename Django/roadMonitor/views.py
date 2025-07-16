@@ -1,5 +1,4 @@
-import random
-import time
+import json
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -23,6 +22,7 @@ from .serializers import RoadRecordSerializer
 from .models import roadRecord, RepairAssignment
 from web.models import UserProfile
 
+pixel_to_meter = 0.001
 CLASS_LABELS = {
     0: "D00",  # 纵向裂纹
     1: "D10",  # 横向裂纹
@@ -32,9 +32,9 @@ CLASS_LABELS = {
 }
 
 types = ['无', '纵向裂纹', '横向裂纹', '龟裂', '坑槽', '修补区域']
-risk_type = ['安全', '低', '中', '高']
+risk_type = ['SAFE', 'LOW', 'MID', 'HIGH']
 
-model = YOLO(os.path.join(settings.BASE_DIR, "best.pt"))
+model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
 
 def checkSeverity(length, area, type):
     sum = 0.0
@@ -69,9 +69,6 @@ def getLabel(label):
 def tostring(length, area):
     return f'裂纹长度:{length:.2f}米\n裂纹面积:{area:.2f}平方米'
 
-def checkChange(length, area, type):
-
-    return True
 def calculate_dimensions(boxes):
     """计算检测框的尺寸信息"""
     max_length = 0.0
@@ -91,11 +88,15 @@ def calculate_dimensions(boxes):
     
     return max_length, total_area
 
-def process_video_task(video_path, output_subdir, name):
+def process_video_task(video_path, output_subdir, name, roadId):
     try:
+        data = []
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise ValueError("无法打开视频文件")
+        
+        previous_frame = None
+        change_threshold = 0.001  # 变化阈值（总像素的1%)
         # 创建输出目录
         output_dir = os.path.join(settings.MEDIA_ROOT, output_subdir)
         os.makedirs(output_dir, exist_ok=True)
@@ -109,6 +110,7 @@ def process_video_task(video_path, output_subdir, name):
         max_length = 0.0
         total_area = 0.0
         frame_count = 0
+        count = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -117,12 +119,57 @@ def process_video_task(video_path, output_subdir, name):
             if frame_count % 5 == 0 :
                 # 调整帧尺寸
                 frame = cv2.resize(frame, (width, height))
+                
+                change_detected = False
+                if previous_frame is not None:
+                    # 计算绝对差异
+                    diff = cv2.absdiff(frame, previous_frame)
+                    
+                    # 转换为灰度图并二值化
+                    gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+                    _, thresh = cv2.threshold(gray_diff, 25, 255, cv2.THRESH_BINARY)
+                    
+                    # 计算变化区域占比
+                    change_ratio = cv2.countNonZero(thresh) / (width * height)
+                    change_detected = change_ratio > change_threshold
+                    print(change_ratio)
+                
+                # 更新前一帧
+                previous_frame = frame.copy()
+
                 if frame_count % 5 == 0:
                     results = model(frame)
                 if results and len(results[0].boxes) > 0:
-                    current_max, current_area = calculate_dimensions(results[0].boxes)
-                    max_length = max(max_length, current_max)
-                    total_area += current_area
+                    boxes = results[0].boxes
+                    classes = boxes.cls.cpu().numpy()  # 获取类别索引
+                    confidences = boxes.conf.cpu().numpy()  # 获取置信度
+                    # 找到最高置信度的检测结果
+                    main_idx = confidences.argmax()
+                    class_idx = int(classes[main_idx])
+                    label = CLASS_LABELS.get(class_idx, "unknown")
+                    
+                    current_length, current_area = calculate_dimensions(results[0].boxes)
+                    max_length = max(max_length, current_length)
+                    if change_detected:
+                        #保存这一帧的图片
+                        saved_frames_dir = os.path.join(settings.MEDIA_ROOT, 'road', 'video', os.path.splitext(name)[0])
+                        print(saved_frames_dir)
+                        os.makedirs(saved_frames_dir, exist_ok=True)
+                        
+                        frame_filename = f"{count}.jpg"
+                        frame_path = os.path.join(saved_frames_dir, frame_filename)
+                        # 保存标注后的帧
+                        cv2.imwrite(frame_path, annotated_frame)  # 使用带标注的帧
+                        data.append({
+                            'disease_type': getLabel(label),
+                            'length': current_length * pixel_to_meter,
+                            'area': current_area * (pixel_to_meter**2),
+                            'severity': risk_type[checkSeverity(current_length, current_area, getLabel(label))],
+                            'path': f"{os.path.splitext(name)[0]}/{frame_filename}"
+                            })
+                        count += 1
+                        total_area += current_area
+
                 # YOLO推理
                 results = model(frame)
                 annotated_frame = results[0].plot()
@@ -137,7 +184,7 @@ def process_video_task(video_path, output_subdir, name):
             'rel_url': rel_url,
             'max_length': max_length,
             'total_area': total_area
-        }
+        }, data
  
     except Exception as e:
         # 记录详细日志
@@ -191,20 +238,24 @@ def upload_image(request):
     if not default_storage.exists(save_path):
         default_storage.save(save_path, file)
     local_path = default_storage.path(save_path)
-    print(local_path)
+    # print(local_path)
     # 判断是否为视频文件
     if file.content_type.startswith('video/'):
         try:
+            data = []
             record.file_type = 0
-            task = process_video_task(local_path, 'road/results', file.name)
+            task, data = process_video_task(local_path, 'road/results', file.name, roadId)
             # 构建视频访问URL
-            res = request.build_absolute_uri(task)
-            record.length = res['max_length'] * 0.001  # 应用转换系数
-            record.area = res['total_area'] * (0.001**2)
-            record.severity = checkSeverity(record.length, record.area, 1)
+            record.length = task['max_length'] * pixel_to_meter
+            record.area = task['total_area'] * (pixel_to_meter**2)
+            record.disease_type = 0
+            record.severity = checkSeverity(record.length, record.area, 0)
+            json_data = json.dumps(data, indent=4)
+            record.description = json_data
+            print(json_data)
             record.save()
-            video_url = res['rel_url']
-            print(video_url)
+            video_url = request.build_absolute_uri(task['rel_url'])
+            # print(video_url)
             return Response({'title' : types[record.disease_type],
                             'description': tostring(record.length, record.area),
                             'severity': risk_type[record.severity],
@@ -245,7 +296,6 @@ def upload_image(request):
                 max_length, total_area = calculate_dimensions(boxes)
                 
                 # 应用物理尺寸转换
-                pixel_to_meter = 0.001
                 record.length = max_length * pixel_to_meter
                 record.area = total_area * (pixel_to_meter**2)
                 record.disease_type = getLabel(label)
