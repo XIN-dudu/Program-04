@@ -522,7 +522,14 @@ button:disabled {
   max-height: 300px;
   object-fit: contain;
 }
-
+.result-media img {
+  width: 100%;
+  height: 300px;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  margin-top: 12px;
+}
 .result-media video {
   max-width: 100%;
   height: auto;
