@@ -4,6 +4,32 @@ from requests import request
 from rest_framework import serializers
 from .models import roadRecord
 
+
+from rest_framework import serializers
+
+class RoadSerializer(serializers.ModelSerializer):
+    
+    # 处理description字段
+    description = serializers.JSONField()
+
+    class Meta:
+        model = roadRecord
+        fields = ['road_id', 'description']
+        
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if isinstance(data['description'], list):
+            for item in data['description']:
+                # 将数字转换为文字描述
+                severity_mapping = {v[0]: v[1] for v in roadRecord.SEVERITY_CHOICES}
+                disease_type_mapping = {v[0]: v[1] for v in roadRecord.DISEASE_TYPE_CHOICES}
+                item['severity'] = severity_mapping.get(item.get('severity'), 'UNKNOWN')
+                item['disease_type'] = disease_type_mapping.get(item.get('disease_type'), 'UNKNOWN')
+                url = os.path.join(settings.MEDIA_URL, 'road', item['url'])
+                item['url'] = 'http://localhost:8000' + url
+                
+        return data
+
 class RoadRecordSerializer(serializers.ModelSerializer):
 
     class Meta:
