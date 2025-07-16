@@ -48,7 +48,7 @@
         <button
           v-if="isDeletable"
           class="delete-button"
-          @click.stop="deleteRecord(record.road_id, index)"
+          @click.stop="deleteRecord(record.disease_id, index)"
         >
           删除记录
         </button>
@@ -132,10 +132,10 @@ const fetchRecords = async () => {
   }
 }
 
-const deleteRecord = async (roadId, index) => {
+const deleteRecord = async (diseaseId, index) => {
   if (!confirm('确定要删除这条记录吗？')) return
   try {
-    await axios.delete(`${backendBaseURL}/history/${roadId}/delete`, {
+    await axios.delete(`${backendBaseURL}/history/${diseaseId}/delete`, {
       withCredentials: true
     })
     records.value.splice(index, 1)
