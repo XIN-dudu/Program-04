@@ -21,13 +21,10 @@ const routes = [
         component: () => import('@/views/urbanTraffic/Hotspot.vue')
       },
       {
-        path: 'weekflow',
-        component: () => import('@/views/urbanTraffic/Weekflow.vue')
-      },
-      {
-        path: 'road',
-        component: () => import('@/views/urbanTraffic/Road.vue')
+        path: 'shandongmap',
+        component: () => import('@/views/urbanTraffic/ShandongMap.vue')
       }
+      // 已删除 weekflow 和 road 路由
     ]
   },
   { path: '/history', component: () => import('../views/History.vue'), meta: { requiresAuth: true } },

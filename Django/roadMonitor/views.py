@@ -655,3 +655,245 @@ def assign_task(request, task_id):
         except UserProfile.DoesNotExist:
             continue
     return Response({'msg': '分配成功'})
+
+@api_view(['GET'])
+def weekly_flow_time_distribution(request):
+    """
+    获取周客流量时间分布数据。
+    GET参数：
+        - date (string, 可选): 日期，格式如 '0912'，默认0912
+        - time_slots (int, 可选): 时间区间数量，默认12（每2小时一个区间）
+    返回：
+        - time_slots (list): 时间区间列表
+        - week_data (dict): 一周各天的数据
+    """
+    import pymysql
+    date = request.GET.get('date', '0912')
+    time_slots = int(request.GET.get('time_slots', 12))
+    
+    # 计算时间区间
+    slot_hours = 24 // time_slots
+    time_slots_list = []
+    for i in range(time_slots):
+        start_hour = i * slot_hours
+        end_hour = (i + 1) * slot_hours if i < time_slots - 1 else 24
+        time_slots_list.append(f"{start_hour:02d}:00-{end_hour:02d}:00")
+    
+    table_name = f'jn{date}_od_pairs'
+    
+    # 拼接日期字符串
+    month = date[:2]
+    day = date[2:]
+    date_str = f"2013-{month}-{day}"
+    
+    try:
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        
+        # 获取一周的数据（从指定日期开始的一周）
+        week_data = {}
+        week_days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        week_day_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+        
+        for day_idx, day_name in enumerate(week_days):
+            # 计算当前日期
+            current_date = datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=day_idx)
+            current_date_str = current_date.strftime("%Y-%m-%d")
+            
+            # 统计每个时间区间的订单数
+            day_data = []
+            for i in range(time_slots):
+                start_hour = i * slot_hours
+                end_hour = (i + 1) * slot_hours if i < time_slots - 1 else 24
+                
+                start_time = f"{current_date_str} {start_hour:02d}:00:00"
+                end_time = f"{current_date_str} {end_hour:02d}:00:00"
+                
+                sql = f"""
+                    SELECT COUNT(*) as count
+                    FROM {table_name}
+                    WHERE o_time >= %s AND o_time < %s
+                """
+                cursor.execute(sql, (start_time, end_time))
+                result = cursor.fetchone()
+                day_data.append(result[0] if result else 0)
+            
+            week_data[day_name] = {
+                'name': week_day_names[day_idx],
+                'data': day_data
+            }
+        
+        cursor.close()
+        conn.close()
+        
+        return Response({
+            'time_slots': time_slots_list,
+            'week_data': week_data
+        })
+        
+    except Exception as e:
+        import traceback
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+
+@api_view(['GET'])
+def od_analysis(request):
+    """
+    全面的OD对分析API。
+    统计所有数据库中表名包含'_od_pairs'的OD表，合并所有OD对数据。
+    GET参数：
+        - analysis_type (string, 可选): 分析类型，'origin'/'destination'/'both'，默认'both'
+        - time_slots (int, 可选): 时间区间数量，默认12
+    返回：
+        - analysis_type (string): 分析类型
+        - time_slots (list): 时间区间列表
+        - week_data (dict): 一周各天的数据（合并所有OD表）
+        - summary (dict): 统计摘要
+    """
+    import pymysql
+    analysis_type = request.GET.get('analysis_type', 'both')  # origin/destination/both
+    time_slots = int(request.GET.get('time_slots', 12))
+    
+    # 计算时间区间
+    slot_hours = 24 // time_slots
+    time_slots_list = []
+    for i in range(time_slots):
+        start_hour = i * slot_hours
+        if i < time_slots - 1:
+            end_hour = (i + 1) * slot_hours
+            time_slots_list.append(f"{start_hour:02d}:00-{end_hour:02d}:00")
+        else:
+            time_slots_list.append(f"{start_hour:02d}:00-23:59")
+    try:
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        # 获取所有OD对表名
+        cursor.execute("SHOW TABLES LIKE '%_od_pairs'")
+        od_tables = [row[0] for row in cursor.fetchall()]
+        week_days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        week_day_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+        week_data = {day: {'name': week_day_names[idx], 'data': [0]*time_slots, 'total': 0} for idx, day in enumerate(week_days)}
+        total_trips = 0
+        daily_totals = {day: 0 for day in week_days}
+        hourly_totals = [0] * time_slots
+        for table_name in od_tables:
+            if analysis_type == 'origin':
+                time_field = 'o_time'
+            elif analysis_type == 'destination':
+                time_field = 'd_time'
+            else:
+                time_field = 'o_time'
+            cursor.execute(f"SELECT DISTINCT DATE({time_field}) FROM {table_name}")
+            all_dates = [row[0] for row in cursor.fetchall() if row[0] is not None]
+            for date in all_dates:
+                day_idx = date.weekday()  # 0=周一, 6=周日
+                day_key = week_days[day_idx]
+                for i in range(time_slots):
+                    start_hour = i * slot_hours
+                    if i < time_slots - 1:
+                        end_hour = (i + 1) * slot_hours
+                        end_time = f"{date} {end_hour:02d}:00:00"
+                    else:
+                        end_time = f"{date} 23:59:59"
+                    start_time = f"{date} {start_hour:02d}:00:00"
+                    sql = f"SELECT COUNT(*) FROM {table_name} WHERE {time_field} >= %s AND {time_field} <= %s"
+                    cursor.execute(sql, (start_time, end_time))
+                    count = cursor.fetchone()[0]
+                    week_data[day_key]['data'][i] += count
+                    week_data[day_key]['total'] += count
+                    hourly_totals[i] += count
+                    total_trips += count
+                daily_totals[day_key] += week_data[day_key]['total']
+        summary = {
+            'total_trips': total_trips,
+            'avg_trips_per_day': total_trips // 7 if total_trips > 0 else 0,
+            'peak_hour': '',
+            'peak_day': '',
+            'analysis_type': analysis_type
+        }
+        if hourly_totals and max(hourly_totals) > 0:
+            peak_hour_idx = hourly_totals.index(max(hourly_totals))
+            summary['peak_hour'] = time_slots_list[peak_hour_idx]
+        if daily_totals and max(daily_totals.values()) > 0:
+            peak_day = max(daily_totals, key=daily_totals.get)
+            summary['peak_day'] = week_data[peak_day]['name']
+        cursor.close()
+        conn.close()
+        return Response({
+            'analysis_type': analysis_type,
+            'time_slots': time_slots_list,
+            'week_data': week_data,
+            'summary': summary
+        })
+    except Exception as e:
+        import traceback
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+
+@api_view(['GET'])
+def weather_flow_analysis(request):
+    """
+    返回每小时的天气数据和客流量数据，分析天气对客流量的影响。
+    读取web/public/static/data/jn_weather_c.csv，遍历所有OD表统计每小时订单数，按时间对齐。
+    """
+    import pymysql
+    import os
+    from django.conf import settings
+    import pandas as pd
+    # 修正路径：Django项目的上一级web/public/static/data/jn_weather_c.csv
+    weather_path = os.path.abspath(os.path.join(settings.BASE_DIR, '..', 'web', 'public', 'static', 'data', 'jn_weather_c.csv'))
+    try:
+        weather_df = pd.read_csv(weather_path)
+        weather_df['Time_new'] = pd.to_datetime(weather_df['Time_new'])
+        weather_df.set_index('Time_new', inplace=True)
+        # 2. 统计每小时客流量
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        # 获取所有OD对表名
+        cursor.execute("SHOW TABLES LIKE '%_od_pairs'")
+        od_tables = [row[0] for row in cursor.fetchall()]
+        # 构建所有小时的时间戳
+        all_times = weather_df.index.unique().sort_values()
+        flow_dict = {t: 0 for t in all_times}
+        for table_name in od_tables:
+            # 只查o_time字段
+            cursor.execute(f"SELECT o_time FROM {table_name}")
+            for row in cursor.fetchall():
+                if row[0] is not None:
+                    t = pd.to_datetime(row[0]).replace(minute=0, second=0, microsecond=0)
+                    if t in flow_dict:
+                        flow_dict[t] += 1
+        cursor.close()
+        conn.close()
+        # 合并天气和客流量
+        result = []
+        for t in all_times:
+            w = weather_df.loc[t]
+            result.append({
+                'time': t.strftime('%Y-%m-%d %H:%M'),
+                'temperature': float(w['Temperature']),
+                'humidity': float(w['Humidity']),
+                'wind_speed': float(w['Wind_Speed']),
+                'precip': float(w['Precip']),
+                'flow': int(flow_dict[t])
+            })
+        return Response(result)
+    except Exception as e:
+        # 返回空数组，保证前端不报错
+        return Response([])

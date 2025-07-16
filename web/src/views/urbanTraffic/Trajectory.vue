@@ -33,14 +33,19 @@
             <input
               v-model="carIdInput"
               @input="onCarInput"
-              @focus="showCarDropdown = true"
+              @focus="onCarFocus"
               @blur="onCarBlur"
               placeholder="请输入或选择车牌号"
               autocomplete="off"
             />
-            <ul v-if="showCarDropdown && carOptions.length" class="car-dropdown">
+            <ul
+              v-if="showCarDropdown && carOptions.length"
+              class="car-dropdown"
+              ref="carDropdown"
+              @scroll="onCarDropdownScroll"
+            >
               <li v-for="item in carOptions" :key="item" @mousedown.prevent="selectCar(item)">{{ item }}</li>
-              <li v-if="carHasMore" class="car-dropdown-more" @mousedown.prevent="loadMoreCarOptions">加载更多...</li>
+              <li v-if="carLoading" class="car-dropdown-more">加载中...</li>
             </ul>
           </div>
         </div>
@@ -110,6 +115,12 @@ export default {
   },
   mounted() {
     this.initMap();
+    // 监听下拉滚动
+    this.$nextTick(() => {
+      if (this.$refs.carDropdown) {
+        this.$refs.carDropdown.addEventListener('scroll', this.onCarDropdownScroll);
+      }
+    });
   },
   methods: {
     initMap() {
@@ -139,6 +150,13 @@ export default {
         showMsg('指定日期范围内没有记录！');
       }
     },
+    onCarFocus() {
+      this.showCarDropdown = true;
+      if (!this.carIdInput) {
+        this.carPage = 1;
+        this.fetchCarOptions();
+      }
+    },
     onCarInput(e) {
       this.carIdInput = e.target.value;
       this.carPage = 1;
@@ -166,17 +184,31 @@ export default {
       if (!loadMore) this.carOptions = [];
       this.carLoading = true;
       const page = loadMore ? this.carPage + 1 : 1;
-      const res = await fetch(`/api/cars/?search=${encodeURIComponent(this.carIdInput)}&page=${page}&page_size=${this.carPageSize}`);
+      // 只查前缀
+      const search = this.carIdInput || '';
+      const res = await fetch(`/api/cars/?search=${encodeURIComponent(search)}&page=${page}&page_size=${this.carPageSize}`);
       const data = await res.json();
+      let results = data.results || [];
+      // 前端兜底前缀过滤
+      if (search) {
+        results = results.filter(x => x.startsWith(search));
+      }
       if (loadMore) {
-        this.carOptions = this.carOptions.concat(data.results);
+        this.carOptions = this.carOptions.concat(results);
         this.carPage = page;
       } else {
-        this.carOptions = data.results;
+        this.carOptions = results;
         this.carPage = 1;
       }
       this.carHasMore = this.carOptions.length < data.count;
       this.carLoading = false;
+    },
+    onCarDropdownScroll() {
+      const ul = this.$refs.carDropdown;
+      if (!ul || this.carLoading || !this.carHasMore) return;
+      if (ul.scrollTop + ul.clientHeight >= ul.scrollHeight - 10) {
+        this.fetchCarOptions(true);
+      }
     },
     loadMoreCarOptions() {
       this.fetchCarOptions(true);
