@@ -1008,8 +1008,20 @@ def complete_task(request, task_id):
     if not files:
         print('【complete_task调试】未上传图片')
         return Response({'msg': '请上传图片'}, status=400)
+    
+    # 保存图片并更新completion_image字段
+    image_paths = []
     for file in files:
-        RepairCompletionImage.objects.create(assignment=assignment, image=file)
+        completion_image = RepairCompletionImage.objects.create(assignment=assignment, image=file)
+        # 获取图片的相对路径
+        relative_path = completion_image.image.url
+        image_paths.append(relative_path)
+    
+    # 更新RepairAssignment的completion_image字段（保存第一张图片的路径）
+    if image_paths:
+        assignment.completion_image = image_paths[0]
+        assignment.save()
+        print('【complete_task调试】更新completion_image:', image_paths[0])
     image_urls = [request.build_absolute_uri(img.image.url) for img in assignment.completion_images.all()]
     print('【complete_task调试】上传成功，图片数:', len(image_urls))
     return Response({'msg': '上传成功', 'image_urls': image_urls})

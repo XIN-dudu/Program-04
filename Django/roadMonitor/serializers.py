@@ -35,10 +35,11 @@ class RoadSerializer(serializers.ModelSerializer):
 class RoadRecordSerializer(serializers.ModelSerializer):
     assigned_person_ids = serializers.SerializerMethodField()
     assignment_status = serializers.SerializerMethodField()
+    assignments = serializers.SerializerMethodField()  # 新增：所有分配信息
 
     class Meta:
         model = roadRecord
-        fields = ['disease_id', 'road_id', 'disease_type', 'severity', 'assigned_person_ids', 'assignment_status', 'description']
+        fields = ['disease_id', 'road_id', 'disease_type', 'severity', 'assigned_person_ids', 'assignment_status', 'assignments', 'description']
 
         extra_kwargs = {
             'road_id': {'required': True, 'min_value': 1},
@@ -65,6 +66,31 @@ class RoadRecordSerializer(serializers.ModelSerializer):
             return assignment.status
         except Exception:
             return None
+
+    def get_assignments(self, obj):
+        """获取所有维修工的分配信息"""
+        assignments = obj.assignments.all()
+        result = []
+        for assignment in assignments:
+            # 从RepairCompletionImage表获取图片信息
+            completion_images = assignment.completion_images.all()
+            image_urls = []
+            if completion_images.exists():
+                request = self.context.get('request')
+                if request:
+                    image_urls = [request.build_absolute_uri(img.image.url) for img in completion_images]
+                else:
+                    image_urls = [img.image.url for img in completion_images]
+            
+            result.append({
+                'worker_id': assignment.worker.id,
+                'worker_username': assignment.worker.username,
+                'status': assignment.status,
+                'assigned_time': assignment.assigned_time.strftime("%Y-%m-%d %H:%M:%S"),
+                'completion_image': image_urls[0] if image_urls else None,  # 第一张图片
+                'completion_images': image_urls  # 所有图片
+            })
+        return result
 
     def validate_length(self, value):
         """验证裂缝长度必须为正数"""

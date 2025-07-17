@@ -45,15 +45,34 @@
               {{ getTaskStatus(task) }}
             </td>
             <td>
-              <button class="assign-btn" @click="assignTask(task)" :disabled="assignLoading[task.disease_id]">
-                {{ assignLoading[task.disease_id] ? '分配中...' : '分配' }}
-              </button>
+              <button
+                v-if="getTaskStatus(task) === '已完成'"
+                class="assign-btn"
+                @click="showCompletionImages(task)"
+              >查看</button>
+              <button
+                v-else
+                class="assign-btn"
+                @click="assignTask(task)"
+                :disabled="assignLoading[task.disease_id]"
+              >{{ assignLoading[task.disease_id] ? '分配中...' : '分配' }}</button>
             </td>
           </tr>
         </tbody>
       </table>
       <div v-if="successMsg" class="message success">{{ successMsg }}</div>
       <div v-if="errorMsg" class="message error">{{ errorMsg }}</div>
+    </div>
+    <!-- 新增：查看弹窗 -->
+    <div v-if="viewDialog" class="view-dialog-mask" @click.self="viewDialog = false">
+      <div class="view-dialog-box">
+        <div class="view-dialog-title">维修工上传图片 <span class="view-dialog-close" @click="viewDialog = false">×</span></div>
+        <div v-if="viewImages.length === 0" style="padding: 24px 0; text-align: center; color: #888;">暂无上传图片</div>
+        <div v-for="item in viewImages" :key="item.username" class="view-img-item">
+          <div class="view-img-username">{{ item.username }}</div>
+          <img :src="item.image" alt="认证图片" class="view-img-pic" />
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -68,6 +87,10 @@ const assignLoading = reactive({})
 
 const successMsg = ref('')
 const errorMsg = ref('')
+
+// 新增：查看弹窗相关
+const viewDialog = ref(false)
+const viewImages = ref([]) // [{username, image}]
 
 // 加载病害任务
 async function loadTasks() {
@@ -149,9 +172,33 @@ function clearAll(task) {
   task.assigned_person_ids = []
 }
 
+// 新增：查看图片方法
+function showCompletionImages(task) {
+  if (!task.assignments) {
+    viewImages.value = []
+  } else {
+    viewImages.value = task.assignments
+      .filter(a => a.completion_image)
+      .map(a => ({
+        username: a.worker_username || getUsernameById(a.worker_id),
+        image: a.completion_image.startsWith('http') ? a.completion_image : `http://localhost:8000${a.completion_image}`
+      }))
+  }
+  viewDialog.value = true
+}
+
 function getTaskStatus(task) {
+  console.log('Task data:', task); // 调试信息
+  
   // 优先用后端 assignment_status 字段（针对当前用户或管理员）
   if (task.assignment_status === 'finished') return '已完成';
+  // 检查 assignments 数组中的状态
+  if (task.assignments && task.assignments.length > 0) {
+    // 检查是否所有维修工都完成了
+    const allFinished = task.assignments.every(a => a.status === 'finished');
+    if (allFinished) return '已完成';
+  }
+  
   // 没有分配维修工
   if (!task.assigned_person_ids || task.assigned_person_ids.length === 0) return '未分配';
   // 没有 assignments 字段，无法判断完成情况，默认已分配
@@ -199,7 +246,6 @@ onMounted(() => {
   border-collapse: collapse;
   background: #fff;
   border-radius: 6px;
-  overflow: hidden;
   box-shadow: none;
 }
 .maintain-table th, .maintain-table td {
@@ -207,6 +253,7 @@ onMounted(() => {
   text-align: center;
   border-bottom: 1px solid #ececec;
   font-size: 15px;
+  overflow: visible; /* 允许内容溢出 */
 }
 .maintain-table th {
   background: #f5f7fa;
@@ -216,6 +263,11 @@ onMounted(() => {
 }
 .maintain-table tr:last-child td {
   border-bottom: none;
+}
+.maintain-table th:nth-child(5), .maintain-table td:nth-child(5) {
+  width: 260px;
+  min-width: 220px;
+  max-width: 320px;
 }
 .assign-btn {
   background: #fff;
@@ -232,6 +284,17 @@ onMounted(() => {
 .assign-btn:hover {
   background: #2476e8;
   color: #fff;
+}
+/* 新增：美化查看图片链接 */
+td a {
+  color: #2476e8;
+  text-decoration: none;
+  font-weight: 500;
+  transition: text-decoration 0.2s;
+}
+td a:hover {
+  text-decoration: underline;
+  color: #0056b3;
 }
 /* 保持原有多选下拉样式不变 */
 .container {
@@ -347,6 +410,10 @@ button:disabled {
   border-radius: 6px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   min-width: 180px;
+  width: max-content;
+  max-width: 300px;
+  max-height: 260px;
+  overflow-y: auto;
   margin-top: 2px;
   padding: 6px 0 0 0;
 }
@@ -376,5 +443,56 @@ button:disabled {
 }
 .dropdown-actions button:hover {
   background: #e6f0ff;
+}
+
+.view-dialog-mask {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.18);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.view-dialog-box {
+  background: #fff;
+  border-radius: 10px;
+  min-width: 320px;
+  max-width: 90vw;
+  max-height: 80vh;
+  padding: 24px 32px 18px 32px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.13);
+  overflow-y: auto;
+  position: relative;
+}
+.view-dialog-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 18px;
+  color: #222;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.view-dialog-close {
+  font-size: 22px;
+  color: #888;
+  cursor: pointer;
+  margin-left: 16px;
+}
+.view-img-item {
+  margin-bottom: 18px;
+}
+.view-img-username {
+  font-weight: bold;
+  margin-bottom: 6px;
+  color: #2476e8;
+}
+.view-img-pic {
+  max-width: 320px;
+  max-height: 220px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  background: #f7f7f7;
 }
 </style>
