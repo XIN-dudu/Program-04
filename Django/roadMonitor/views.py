@@ -30,6 +30,7 @@ from .serializers import RoadRecordSerializer, RoadSerializer
 from .models import roadRecord, RepairAssignment, RepairCompletionImage
 from web.models import UserProfile
 from .models import TripDetailStat
+from web.views import create_log
 
 pixel_to_meter = 0.003
 CLASS_LABELS = {
@@ -730,23 +731,55 @@ def assign_task(request, task_id):
     为指定任务分配多个维修工。
     POST参数：assigned_person_ids: [int, ...]
     """
+    import traceback
+    print(f"[assign_task] called with task_id={task_id}")
     try:
         task = roadRecord.objects.get(pk=task_id)
+        print(f"[assign_task] found task: {task}")
     except roadRecord.DoesNotExist:
+        print(f"[assign_task] 任务不存在: {task_id}")
         return Response({'msg': '任务不存在'}, status=404)
+    except Exception as e:
+        print(f"[assign_task] 获取任务异常: {e}")
+        traceback.print_exc()
+        return Response({'msg': f'获取任务异常: {str(e)}'}, status=500)
     ids = request.data.get('assigned_person_ids', [])
+    print(f"[assign_task] assigned_person_ids: {ids}")
     if not isinstance(ids, list) or not ids:
+        print(f"[assign_task] 请选择至少一位维修工，收到: {ids}")
         return Response({'msg': '请选择至少一位维修工'}, status=400)
-    # 先删除该任务原有分配
-    RepairAssignment.objects.filter(road_record=task).delete()
-    # 批量分配
-    for uid in ids:
-        try:
-            worker = UserProfile.objects.get(pk=uid, permission=1)
-            RepairAssignment.objects.create(road_record=task, worker=worker)
-        except UserProfile.DoesNotExist:
-            continue
-    create_log(request,request.user if hasattr(request, 'user') else None,'info', '维修任务分配', f'任务ID: {task_id}, 分配给: {ids}')
+    try:
+        # 先删除该任务原有分配
+        RepairAssignment.objects.filter(road_record=task).delete()
+        print(f"[assign_task] 已删除原有分配")
+        # 批量分配
+        for uid in ids:
+            try:
+                print(f"[assign_task] 分配给维修工ID: {uid}")
+                worker = UserProfile.objects.get(pk=uid, permission=1)
+                RepairAssignment.objects.create(road_record=task, worker=worker)
+                print(f"[assign_task] 分配成功: {uid}")
+            except UserProfile.DoesNotExist:
+                print(f"[assign_task] 维修工不存在或权限不符: {uid}")
+                continue
+            except Exception as e:
+                print(f"[assign_task] 分配维修工异常: {e}")
+                traceback.print_exc()
+        # 用自定义session方式获取当前操作用户
+        username = request.session.get('username')
+        log_user = None
+        if username:
+            try:
+                log_user = UserProfile.objects.get(username=username)
+            except UserProfile.DoesNotExist:
+                log_user = None
+        create_log(request, log_user, 'info', '维修任务分配', f'任务ID: {task_id}, 分配给: {ids}')
+        print(f"[assign_task] 日志已记录")
+    except Exception as e:
+        print(f"[assign_task] 分配流程异常: {e}")
+        traceback.print_exc()
+        return Response({'msg': f'分配流程异常: {str(e)}'}, status=500)
+    print(f"[assign_task] 分配流程结束，返回成功")
     return Response({'msg': '分配成功'})
 
 @api_view(['GET'])

@@ -129,6 +129,7 @@ async function assignTask(task) {
     errorMsg.value = '请选择至少一位维修工'
     return
   }
+  if (assignLoading[task.disease_id]) return // 防止重复点击
   assignLoading[task.disease_id] = true
   try {
     await axios.post(`/api/tasks/${task.disease_id}/assign/`, {

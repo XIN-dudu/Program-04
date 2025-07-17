@@ -1,56 +1,73 @@
 <template>
-  <div class="liveness-container">
-    <!-- 巨大红色警告弹窗 -->
-    <div v-if="showBigAlert" class="big-alert-overlay">
-      <div class="big-alert-box">
-        <h1>警告！检测到非法入侵</h1>
-        <button class="big-alert-close" @click="handleAlertClose">关闭</button>
+  <div :class="['liveness-mac-bg', { 'dialog-mode': dialogMode }]">
+    <div :class="['liveness-mac-card', { 'dialog-mode': dialogMode }]">
+      <button v-if="dialogMode" class="mac-dialog-close" @click="$emit('close')">×</button>
+      <h1 class="liveness-title-mac">身份验证</h1>
+      <div class="liveness-desc-mac">
+        <span>请对准摄像头并眨眼，然后点击 <b>“开始录制”</b> 上传视频进行身份认证（视频录制时长不少于3秒）</span>
+        <div class="liveness-tip-mac">⚠️ 请确保人脸始终在摄像头画面内，避免遮挡和离开！</div>
       </div>
-    </div>
-    <!-- 主体内容卡片 -->
-    <div v-if="!showBigAlert" class="card">
-      <h1 class="liveness-title">身份验证</h1>
-      <div class="liveness-desc" v-if="featureClosed">该功能暂时关闭，如需使用请联系管理员。</div>
       <div v-if="step === 1">
-        <p class="liveness-tip">请对准摄像头并眨眼，然后点击“开始录制”上传视频进行身份认证（视频录制时长不少于3秒）</p>
-        <div class="camera-area">
-          <video ref="video" width="320" height="240" autoplay></video>
+        <div class="camera-area-mac">
+          <video ref="video" width="340" height="255" autoplay class="mac-video"></video>
         </div>
-        <div class="button-group">
-          <button @click="startRecording" :disabled="recording || featureClosed">开始录制</button>
-          <button @click="stopRecording" :disabled="!recording || featureClosed">停止录制</button>
+        <div class="button-group-mac">
+          <button @click="startRecording" :disabled="recording || featureClosed || showResultDialog" class="mac-btn mac-btn-primary">开始录制</button>
+          <button @click="stopRecording" :disabled="!recording || featureClosed || showResultDialog" class="mac-btn mac-btn-secondary">停止录制</button>
         </div>
-        <div v-if="videoUrl" class="video-preview">
-          <video :src="videoUrl" width="320" height="240" controls></video>
-          <div class="button-group">
-            <button @click="uploadVideo" :disabled="loading || featureClosed">{{ loading ? '检测中...' : '上传验证' }}</button>
-            <button @click="resetVideo" :disabled="featureClosed">重新录制</button>
+        <div v-if="videoUrl" class="video-preview-mac">
+          <video :src="videoUrl" width="340" height="255" controls class="mac-video"></video>
+          <div class="button-group-mac">
+            <button @click="uploadVideo" :disabled="loading || featureClosed || showResultDialog" class="mac-btn mac-btn-primary">{{ loading ? '检测中...' : '上传验证' }}</button>
+            <button v-if="!showResultDialog" @click="resetVideo" :disabled="featureClosed" class="mac-btn mac-btn-secondary">重新录制</button>
           </div>
-          <div v-if="loading" class="loading-tip">检测中，请稍候...</div>
+          <div v-if="loading" class="loading-tip-mac">检测中，请稍候...</div>
+        </div>
+      </div>
+      <!-- 结果弹窗 -->
+      <div v-if="showResultDialog" class="result-modal-mask">
+        <div class="result-modal-content">
+          <div v-if="finalResult && finalResult.success" class="result-success-icon">✔</div>
+          <div v-else class="result-fail-icon">✖</div>
+          <div class="result-title">{{ finalResult && finalResult.success ? '验证通过' : '验证失败' }}</div>
+          <div class="result-msg">{{ finalResult ? finalResult.msg : '' }}</div>
+          <button v-if="!dialogMode" class="mac-btn mac-btn-primary" @click="resetAll">重新录制</button>
+          <button v-else class="mac-btn mac-btn-primary" @click="closeResultDialog">确定</button>
         </div>
       </div>
       <div v-else-if="step === 2">
-        <p class="liveness-tip">活体检测通过！请拍照上传进行身份识别</p>
-        <div class="camera-area">
-          <video ref="video" width="320" height="240" autoplay></video>
+        <div class="liveness-tip-mac">活体检测通过！请拍照上传进行身份识别</div>
+        <div class="camera-area-mac">
+          <video ref="video" width="340" height="255" autoplay class="mac-video"></video>
         </div>
-        <div class="button-group">
-          <button @click="takePhoto" :disabled="featureClosed">拍照</button>
+        <div class="button-group-mac">
+          <button @click="takePhoto" :disabled="featureClosed" class="mac-btn mac-btn-primary">拍照</button>
         </div>
-        <div v-if="imageData" class="photo-preview">
-          <img :src="imageData" width="320" />
-          <div class="button-group">
-            <button @click="uploadImage" :disabled="featureClosed">上传验证</button>
-            <button @click="resetPhoto" :disabled="featureClosed">重新拍照</button>
+        <div v-if="imageData" class="photo-preview-mac">
+          <img :src="imageData" width="340" class="mac-photo" />
+          <div class="button-group-mac">
+            <button @click="uploadImage" :disabled="featureClosed" class="mac-btn mac-btn-primary">上传验证</button>
+            <button @click="resetPhoto" :disabled="featureClosed" class="mac-btn mac-btn-secondary">重新拍照</button>
           </div>
         </div>
       </div>
       <!-- 统一身份验证结果弹窗 -->
-      <div v-if="finalResult" class="result-area">
+      <div v-if="finalResult" class="result-area-mac">
         <h3>身份验证结果</h3>
-        <div v-if="finalResult.success" class="result-success">验证通过</div>
-        <div v-else class="result-fail">验证失败：{{ finalResult.msg }}</div>
-        <div v-if="finalResult.user && finalResult.success" class="result-user">识别到用户：{{ finalResult.user.username }}，相似度：{{ finalResult.score ? finalResult.score.toFixed(2) : '' }}</div>
+        <div v-if="finalResult.success" class="result-success-mac">验证通过</div>
+        <div v-else class="result-fail-mac">验证失败：{{ finalResult.msg }}</div>
+        <div v-if="finalResult.user && finalResult.success" class="result-user-mac">识别到用户：{{ finalResult.user.username }}，相似度：{{ finalResult.score ? finalResult.score.toFixed(2) : '' }}</div>
+        <!-- 新增：失败时显示重试按钮（非入侵告警时） -->
+        <div v-if="!finalResult.success && !showBigAlert" style="margin-top: 20px;">
+          <button @click="resetAll" class="mac-btn mac-btn-primary">重新录制</button>
+        </div>
+      </div>
+      <!-- 巨大红色警告弹窗 -->
+      <div v-if="showBigAlert" class="big-alert-overlay">
+        <div class="big-alert-box">
+          <h1>警告！检测到非法入侵</h1>
+          <button class="big-alert-close" @click="handleAlertClose">关闭</button>
+        </div>
       </div>
     </div>
   </div>
@@ -61,6 +78,16 @@ import axios from 'axios';
 
 export default {
   name: 'LivenessDetection',
+  props: {
+    dialogMode: {
+      type: Boolean,
+      default: false
+    },
+    source: {
+      type: String,
+      default: ''
+    }
+  },
   data() {
     return {
       step: 1,
@@ -78,8 +105,15 @@ export default {
       captureInterval: null,
       loading: false,
       showBigAlert: false,
-      featureClosed: false
+      featureClosed: false,
+      showResultDialog: false,
+      internalSource: this.source || window.location.pathname,
     };
+  },
+  watch: {
+    source(newVal) {
+      this.internalSource = newVal || window.location.pathname;
+    }
   },
   mounted() {
     this.startCamera();
@@ -173,34 +207,42 @@ export default {
       this.capturedFrames.forEach((img, idx) => {
         formData.append('frame' + idx, img, `frame${idx}.jpg`);
       });
+      // 保证source有值
+      formData.append('source', this.internalSource);
       try {
         const response = await axios.post('/api/liveness_and_face_verify/', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-        // 直接判断最终结果
         if (response.data.success) {
-          // 通过则直接显示最终结果
+          localStorage.setItem('isVerified', '1');
           this.finalResult = {
             success: true,
             user: response.data.user,
             score: response.data.score,
-            msg: response.data.msg || '验证通过'
+            msg: response.data.msg || '验证通过',
+            source: this.internalSource
           };
+          this.showResultDialog = true;
+          if (this.dialogMode) {
+            this.$emit('success', { ...this.finalResult, source: this.internalSource });
+          } else {
+            setTimeout(() => { this.$router.push('/home'); }, 1000);
+          }
         } else {
-          // 失败时区分原因
           this.finalResult = {
             success: false,
-            msg: response.data.msg || (response.data.fail_type === 'liveness' ? '活体检测未通过' : (response.data.fail_type === 'intrusion' ? '检测到非法入侵' : '身份验证失败'))
+            msg: response.data.msg || '验证失败',
+            source: this.internalSource
           };
-          if (response.data.fail_type === 'intrusion') {
-            this.showBigAlert = true;
-            localStorage.setItem('intrusion_alert', '1');
-          }
+          this.showResultDialog = true;
         }
-        // 只要有结果就不再进入step2
-        this.step = 3;
-      } catch (error) {
-        this.finalResult = { success: false, msg: error.response?.data?.msg || '检测失败' };
+      } catch (e) {
+        this.finalResult = {
+          success: false,
+          msg: '请求失败',
+          source: this.internalSource
+        };
+        this.showResultDialog = true;
       } finally {
         this.loading = false;
       }
@@ -258,142 +300,248 @@ export default {
     triggerIntrusionAlert() {
       localStorage.setItem('intrusion_alert', '1');
       this.showBigAlert = true;
+    },
+    resetAll() {
+      this.showResultDialog = false; // 关闭结果弹窗
+      this.finalResult = null;
+      this.step = 1;
+      this.videoUrl = '';
+      this.livenessResult = null;
+      this.imageData = null;
+      this.result = null;
+      this.recording = false;
+      this.startCamera();
+    },
+    closeResultDialog() {
+      this.showResultDialog = false;
+      if (this.finalResult && this.finalResult.success && !this.dialogMode) {
+        this.$router.push('/home');
+      }
     }
   }
 };
 </script>
 
 <style scoped>
-.liveness-container {
-  max-width: 800px;
-  margin: 40px auto;
-  padding: 20px;
-  background: #f7f8fa;
+.liveness-mac-bg {
   min-height: 100vh;
-}
-.card {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0,0,0,.1);
-  padding: 32px 32px 24px 32px;
-  margin: 0 auto;
-  max-width: 520px;
-}
-.liveness-title {
-  text-align: left;
-  font-size: 2.1em;
-  color: #222;
-  font-weight: 700;
-  margin-bottom: 18px;
-  letter-spacing: 1px;
-}
-.liveness-desc {
-  color: #d9534f;
-  font-size: 1.1em;
-  margin-bottom: 18px;
-  font-weight: bold;
-}
-.liveness-tip {
-  color: #444;
-  font-size: 1.08em;
-  margin-bottom: 18px;
-}
-.camera-area {
+  background: linear-gradient(135deg, #f8fafc 0%, #e8eaf6 100%);
   display: flex;
-  justify-content: center;
   align-items: center;
-  margin-bottom: 18px;
+  justify-content: center;
 }
-.button-group {
-  margin-top: 10px;
+.liveness-mac-card {
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 8px 32px rgba(60,60,90,0.13), 0 1.5px 4px rgba(30,40,90,0.06);
+  padding: 48px 38px 38px 38px;
+  max-width: 440px;
+  width: 100%;
+  margin: 48px 0;
+  transition: box-shadow 0.2s;
+}
+.liveness-title-mac {
+  font-size: 2.3rem;
+  font-weight: 800;
+  color: #222;
+  margin-bottom: 18px;
+  letter-spacing: 2px;
+  text-align: center;
+}
+.liveness-desc-mac {
+  font-size: 1.08rem;
+  color: #444;
+  margin-bottom: 18px;
+  text-align: center;
+}
+.liveness-tip-mac {
+  color: #1976d2;
+  font-size: 1.08rem;
+  margin-top: 8px;
+  font-weight: 600;
+  text-align: center;
+}
+.camera-area-mac {
   display: flex;
   justify-content: center;
-  gap: 16px;
+  margin-bottom: 18px;
 }
-.button-group button {
-  padding: 8px 22px;
+.mac-video {
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(30,40,90,0.10);
+  background: #000;
+}
+.button-group-mac {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+.mac-btn {
+  min-width: 110px;
+  padding: 10px 0;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
+  font-size: 1.08rem;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 15px;
-  background: #00a1d6;
-  color: white;
-  font-weight: 500;
-  transition: background 0.2s;
+  transition: background 0.18s, box-shadow 0.18s;
+  box-shadow: 0 1.5px 4px rgba(30,40,90,0.06);
 }
-.button-group button:disabled {
-  background: #e0e0e0;
-  color: #aaa;
+.mac-btn-primary {
+  background: linear-gradient(90deg, #1976d2 0%, #42a5f5 100%);
+  color: #fff;
+}
+.mac-btn-primary:disabled {
+  background: #b3c6e6;
+  color: #fff;
   cursor: not-allowed;
 }
-.button-group button:hover:not(:disabled) {
-  background: #007bb8;
+.mac-btn-secondary {
+  background: #f5f5f5;
+  color: #1976d2;
+  border: 1.5px solid #b3c6e6;
 }
-.video-preview, .photo-preview {
+.mac-btn-secondary:disabled {
+  background: #f0f0f0;
+  color: #b3c6e6;
+  cursor: not-allowed;
+}
+.video-preview-mac, .photo-preview-mac {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 10px;
+  margin-bottom: 10px;
 }
-.loading-tip {
-  color: #007bff;
-  margin-top: 10px;
+.mac-photo {
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(30,40,90,0.10);
+  margin-bottom: 10px;
 }
-.result-area {
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 1px solid #eee;
+.result-area-mac {
+  margin-top: 24px;
   text-align: center;
 }
-.result-success {
-  color: #67c23a;
-  font-size: 1.3em;
-  font-weight: bold;
+.result-success-mac {
+  color: #43a047;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 8px;
 }
-.result-fail {
-  color: #f56c6c;
-  font-size: 1.3em;
-  font-weight: bold;
+.result-fail-mac {
+  color: #e53935;
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 8px;
 }
-.result-user {
-  margin-top: 8px;
-  color: #333;
+.result-user-mac {
+  color: #1976d2;
+  font-size: 1.08rem;
+  margin-bottom: 8px;
 }
 .big-alert-overlay {
-  position: fixed; left: 0; top: 0; right: 0; bottom: 0;
-  background: #ff3b3b !important;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,0,0,0.08);
   z-index: 9999;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .big-alert-box {
   background: #fff;
   border-radius: 18px;
-  box-shadow: 0 8px 40px rgba(255,0,0,0.18);
-  padding: 60px 60px 40px 60px;
-  min-width: 420px;
-  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(255,0,0,0.13), 0 1.5px 4px rgba(30,40,90,0.06);
+  padding: 38px 48px;
   text-align: center;
 }
-.big-alert-box h1 {
-  color: #ff2222;
-  font-size: 2.4rem;
-  font-weight: bold;
-  margin-bottom: 36px;
-  letter-spacing: 2px;
-}
 .big-alert-close {
-  background: #ff3b3b;
+  margin-top: 18px;
+  background: #e53935;
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 1.3rem;
-  padding: 12px 38px;
-  margin-top: 18px;
-  cursor: pointer;
+  padding: 8px 24px;
+  font-size: 1.08rem;
   font-weight: 600;
-  transition: background 0.2s;
+  cursor: pointer;
 }
-.big-alert-close:hover {
-  background: #d90000;
+.loading-tip-mac {
+  color: #1976d2;
+  font-size: 1.08rem;
+  margin-top: 8px;
+  text-align: center;
+}
+/* 弹窗模式样式 */
+.liveness-mac-bg.dialog-mode {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(30,40,90,0.13);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.liveness-mac-card.dialog-mode {
+  position: relative;
+  box-shadow: 0 12px 48px rgba(30,40,90,0.18), 0 2px 8px rgba(30,40,90,0.10);
+  margin: 0;
+}
+.mac-dialog-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: transparent;
+  border: none;
+  font-size: 2rem;
+  color: #888;
+  cursor: pointer;
+  z-index: 10;
+  transition: color 0.18s;
+}
+.mac-dialog-close:hover {
+  color: #1976d2;
+}
+.result-modal-mask {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.18);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.result-modal-content {
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 38px 48px 32px 48px;
+  min-width: 320px;
+  text-align: center;
+  animation: popin 0.2s;
+}
+@keyframes popin {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.result-success-icon {
+  font-size: 48px;
+  color: #27c97a;
+  margin-bottom: 12px;
+}
+.result-fail-icon {
+  font-size: 48px;
+  color: #ff4d4f;
+  margin-bottom: 12px;
+}
+.result-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.result-msg {
+  font-size: 16px;
+  color: #555;
+  margin-bottom: 18px;
 }
 </style> 

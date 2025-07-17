@@ -17,12 +17,6 @@
           <router-link to="/history" class="logo-text">历史回放</router-link>
         </div>
         <div v-if="isAdmin">
-          <router-link to="/face-recognition" class="logo-text">人脸识别</router-link>
-        </div>
-        <div v-if="isAdmin">
-          <router-link to="/liveness" class="logo-text">身份验证</router-link>
-        </div>
-        <div v-if="isAdmin">
           <router-link to="/systemlog" class="logo-text">系统日志</router-link>
         </div>
         <div class="user-section">
@@ -64,10 +58,9 @@ const isLoggedIn = computed(() => {
 });
 
 const showNav = computed(() => {
-  // 只在已登录且当前页面不是登录或注册页时显示导航栏
-  // 用正则判断，防止路径不完全匹配
   const path = route.path;
-  return isLoggedIn.value && !/^\/(login|register)?$/.test(path);
+  // 首页/、登录、注册、身份认证页面都不显示导航栏
+  return !['/', '/login', '/register', '/liveness'].includes(path);
 });
 
 const userNameRef = ref(localStorage.getItem('name') || '用户');
@@ -121,22 +114,89 @@ const logout = () => {
   background: #f4f4f4;
 }
 
+/* Mac风格导航栏美化 */
 .nav-header {
-  background: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, .1);
+  background: rgba(255,255,255,0.85);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+  border-radius: 18px;
+  margin: 18px auto 32px auto;
+  max-width: 1400px;
   position: sticky;
   top: 0;
   z-index: 1000;
+  padding: 0 24px;
+  height: 64px;
+  display: flex;
+  align-items: center;
 }
-
 .header-container {
   display: flex;
   align-items: center;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 0 20px;
+  width: 100%;
   height: 64px;
-  gap: 20px;
+  gap: 32px;
+}
+.logo-text {
+  font-size: 1.25rem;
+  color: #007aff;
+  font-weight: 500;
+  text-decoration: none;
+  padding: 6px 18px;
+  border-radius: 12px;
+  transition: background 0.2s, color 0.2s;
+  letter-spacing: 1px;
+}
+.logo-text:hover {
+  background: #f2f6fa;
+  color: #0051a8;
+}
+.router-link-exact-active.logo-text {
+  background: #eaf3ff;
+  color: #0051a8;
+  font-weight: 600;
+}
+.user-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+}
+.username {
+  color: #444;
+  font-size: 1.08rem;
+  font-weight: 500;
+  background: #f5f6fa;
+  border-radius: 12px;
+  padding: 6px 18px;
+  margin-right: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  transition: background 0.2s;
+}
+.username.clickable {
+  cursor: pointer;
+  text-decoration: underline dotted #b0b0b0 1.5px;
+}
+.logout-btn {
+  padding: 6px 18px;
+  background: linear-gradient(90deg,#ff7e5f,#feb47b);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(255,126,95,0.08);
+  transition: background 0.2s;
+}
+.logout-btn:hover {
+  background: linear-gradient(90deg,#ff6a4d,#ffb88c);
+}
+@media (max-width: 900px) {
+  .nav-header { max-width: 100vw; border-radius: 0; margin: 0 0 18px 0; }
+  .header-container { gap: 10px; }
+  .logo-text { font-size: 1rem; padding: 4px 10px; }
+  .username { padding: 4px 10px; }
+  .logout-btn { padding: 4px 10px; font-size: 0.95rem; }
 }
 
 /* 左侧Logo区 */
@@ -158,16 +218,6 @@ const logout = () => {
 
 .bilibili-logo img {
   height: 36px;
-}
-
-.logo-text {
-  font-size: 1.5rem;
-  color: #00a1d6;
-  text-decoration: none;
-}
-
-.logo-text:hover {
-  color: #00b5e5;
 }
 
 /* 用户区域 */

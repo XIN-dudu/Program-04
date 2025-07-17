@@ -1403,6 +1403,7 @@ def liveness_and_face_verify(request):
     username = request.data.get('user_id') or request.POST.get('user_id')
     video_file = request.FILES.get('video')
     frames = [file for key, file in request.FILES.items() if key.startswith('frame')]
+    source = request.data.get('source') or request.POST.get('source') or ''
     if not video_file or not username or not frames:
         return JsonResponse({'success': False, 'msg': '缺少参数', 'fail_type': 'param_error'}, status=400)
     try:
@@ -1412,21 +1413,32 @@ def liveness_and_face_verify(request):
     try:
         # 1. 活体检测（直接转发视频给百度API）
         liveness_pass, api_raw = call_baidu_liveness_api_file(video_file, username=user.username, return_raw=True)
-        # 判断特殊失败类型
+        msg = api_raw.get('msg') or api_raw.get('error_msg') or '活体检测未通过'
+        score = api_raw.get('score', None)
+        # 详细区分失败原因
         if not liveness_pass:
-            msg = api_raw.get('msg') or api_raw.get('error_msg') or '活体检测未通过'
             # 视频时长过短
             if '时长' in msg or '过短' in msg:
-                SystemLog.objects.create(user=user, action='活体检测失败', level='error', details=f'视频时长过短，原因：{msg}', ip_address=get_client_ip(request))
-                return JsonResponse({'success': False, 'msg': msg, 'fail_type': 'short_video'})
+                SystemLog.objects.create(user=user, action='活体检测失败', level='error', details=f'视频时长过短，来源：{source}，原因：{msg}', ip_address=get_client_ip(request))
+                return JsonResponse({'success': False, 'msg': f'活体检测失败：视频时长过短，请录制3秒以上视频。', 'fail_type': 'short_video'})
             # 网络异常
             if '网络' in msg or 'API请求异常' in msg:
-                SystemLog.objects.create(user=user, action='活体检测失败', level='error', details=f'网络异常，原因：{msg}', ip_address=get_client_ip(request))
-                return JsonResponse({'success': False, 'msg': msg, 'fail_type': 'network_error'})
+                SystemLog.objects.create(user=user, action='活体检测失败', level='error', details=f'网络异常，来源：{source}，原因：{msg}', ip_address=get_client_ip(request))
+                return JsonResponse({'success': False, 'msg': f'活体检测失败：网络异常，请检查网络连接。', 'fail_type': 'network_error'})
+            # 分数为0或极低
+            if score is not None and float(score) < 0.01:
+                alert = AlertEvent.objects.create(user=user, alert_time=timezone.now(), alert_type='活体检测失败', status='fail', related_data=api_raw, video=video_file)
+                log = SystemLog.objects.create(user=user, action='活体检测失败', level='warning', details=f'活体检测分数过低（{score}），来源：{source}，尝试操作：{source}，原因：{msg}', alert_event=alert, ip_address=get_client_ip(request))
+                return JsonResponse({'success': False, 'msg': f'活体检测失败：分数过低（{score}），请确保人脸清晰且有眨眼动作。', 'fail_type': 'liveness_score_low'})
+            # 未检测到人脸
+            if '未检测到人脸' in msg or '未检测到' in msg:
+                alert = AlertEvent.objects.create(user=user, alert_time=timezone.now(), alert_type='活体检测失败', status='fail', related_data=api_raw, video=video_file)
+                log = SystemLog.objects.create(user=user, action='活体检测失败', level='warning', details=f'未检测到人脸，来源：{source}，尝试操作：{source}，原因：{msg}', alert_event=alert, ip_address=get_client_ip(request))
+                return JsonResponse({'success': False, 'msg': f'活体检测失败：未检测到人脸，请确保正对摄像头。', 'fail_type': 'no_face_detected'})
             # 其它情况视为入侵
             alert = AlertEvent.objects.create(user=user, alert_time=timezone.now(), alert_type='活体检测失败', status='fail', related_data=api_raw, video=video_file)
-            log = SystemLog.objects.create(user=user, action='活体检测失败', level='warning', details=f'活体检测未通过，原因：{msg}', alert_event=alert, ip_address=get_client_ip(request))
-            return JsonResponse({'success': False, 'msg': msg, 'fail_type': 'intrusion'})
+            log = SystemLog.objects.create(user=user, action='活体检测失败', level='warning', details=f'活体检测未通过，来源：{source}，尝试操作：{source}，原因：{msg}', alert_event=alert, ip_address=get_client_ip(request))
+            return JsonResponse({'success': False, 'msg': f'活体检测未通过，原因：{msg}', 'fail_type': 'intrusion'})
         # 2. 人脸识别（用上传的帧图片）
         verify_success = False
         for img in frames:
@@ -1434,15 +1446,15 @@ def liveness_and_face_verify(request):
                 verify_success = True
                 break
         if verify_success:
-            SystemLog.objects.create(user=user, action='人脸识别通过', level='info', details='人脸识别通过', ip_address=get_client_ip(request))
+            SystemLog.objects.create(user=user, action='人脸识别通过', level='info', details=f'人脸识别通过，来源：{source}，操作：{source}', ip_address=get_client_ip(request))
             return JsonResponse({'success': True, 'msg': '验证通过'})
         else:
             # 人脸识别未通过，视为入侵
             alert = AlertEvent.objects.create(user=user, alert_time=timezone.now(), alert_type='人脸识别失败', status='fail', related_data={}, video=video_file)
-            log = SystemLog.objects.create(user=user, action='人脸识别失败', level='warning', details='人脸识别未通过，所有帧均未通过比对', alert_event=alert, ip_address=get_client_ip(request))
+            log = SystemLog.objects.create(user=user, action='人脸识别失败', level='warning', details=f'人脸识别未通过，来源：{source}，尝试操作：{source}，所有帧均未通过比对', alert_event=alert, ip_address=get_client_ip(request))
             return JsonResponse({'success': False, 'msg': '人脸识别未通过', 'fail_type': 'intrusion'})
     except Exception as e:
-        SystemLog.objects.create(user=user, action='活体检测异常', level='error', details=f'后端异常: {str(e)}', ip_address=get_client_ip(request))
+        SystemLog.objects.create(user=user, action='活体检测异常', level='error', details=f'后端异常: {str(e)}，来源：{source}', ip_address=get_client_ip(request))
         return JsonResponse({'success': False, 'msg': f'后端异常: {str(e)}', 'fail_type': 'backend_error'}, status=500)
 
 def extract_frames(video_path, num_frames=3):
