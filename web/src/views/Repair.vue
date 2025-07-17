@@ -21,6 +21,7 @@
             <td>{{ getTaskStatus(task) }}</td>
             <td>
               <button class="detail-btn" @click="showDetail(task)">查看详情</button>
+              <button class="detail-btn" style="margin-left:8px;" @click="handleViewImages(task)">查看图片</button>
             </td>
           </tr>
         </tbody>
@@ -50,6 +51,24 @@
       </div>
     </div>
   </div>
+  <!-- 图片预览弹窗 -->
+  <div v-if="imageDialog" class="modal-mask" @click.self="handleCloseImageDialog">
+    <div class="modal-container" style="max-width:700px;">
+      <div style="font-size:18px;font-weight:600;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;">图片预览 <span style="font-size:22px;color:#888;cursor:pointer;" @click="handleCloseImageDialog">×</span></div>
+      <div v-if="imageList.length === 0" style="padding: 24px 0; text-align: center; color: #888;">无图片可预览</div>
+      <div v-else style="display: flex; flex-wrap: wrap; gap: 12px;">
+        <img v-for="(img, idx) in imageList" :key="idx" :src="img" style="max-width: 200px; max-height: 160px; border-radius: 6px; cursor: pointer;" @click="showBigImage(img)" />
+      </div>
+    </div>
+  </div>
+
+  <!-- 单张大图弹窗 -->
+  <div v-if="bigImageDialog" class="modal-mask" @click.self="closeBigImage">
+    <div class="modal-container" style="max-width:90vw;max-height:90vh;display:flex;flex-direction:column;align-items:center;">
+      <span style="align-self:flex-end;font-size:28px;color:#888;cursor:pointer;margin-bottom:8px;" @click="closeBigImage">×</span>
+      <img :src="bigImageUrl" style="max-width:80vw;max-height:80vh;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.18);" />
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -64,6 +83,12 @@ const uploadMsg = ref('')
 const uploadSuccess = ref(false)
 const uploadedImageUrls = ref([])
 const uploadedImageIds = ref([])
+
+// 图片预览弹窗相关（直接用 description 字段）
+const imageDialog = ref(false)
+const imageList = ref([])
+const bigImageDialog = ref(false)
+const bigImageUrl = ref('')
 
 async function loadTasks() {
   const res = await axios.get('/api/my_tasks/', { withCredentials: true })
@@ -139,6 +164,33 @@ async function markTaskFinished() {
     uploadMsg.value = '认证失败'
     uploadSuccess.value = false
   }
+}
+
+function handleViewImages(task) {
+  if (!task.description || !Array.isArray(task.description)) {
+    imageList.value = []
+  } else {
+    imageList.value = task.description
+      .filter(item => item.url && /\.(jpg|jpeg|png|gif)$/i.test(item.url))
+      .map(item => {
+        let url = item.url.replace(/\\/g, '/')
+        if (!url.startsWith('http')) url = `/media/road/${url}`
+        return url
+      })
+  }
+  imageDialog.value = true
+}
+function handleCloseImageDialog() {
+  imageDialog.value = false
+  imageList.value = []
+}
+function showBigImage(url) {
+  bigImageUrl.value = url
+  bigImageDialog.value = true
+}
+function closeBigImage() {
+  bigImageDialog.value = false
+  bigImageUrl.value = ''
 }
 
 function getTaskStatus(task) {

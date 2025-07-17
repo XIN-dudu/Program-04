@@ -16,14 +16,25 @@
             <td>{{ user.username }}</td>
             <td>{{ user.email }}</td>
             <td>
-              <select v-model="user.permission" @change="updatePermission(user)" class="perm-select">
+              <select
+                v-model="user.permission"
+                @change="updatePermission(user)"
+                class="perm-select"
+                :disabled="user.username === currentUsername"
+                :title="user.username === currentUsername ? '不能修改自己的权限' : ''"
+              >
                 <option value="0">普通用户</option>
                 <option value="1">维修工</option>
                 <option value="2">管理员</option>
               </select>
             </td>
             <td>
-              <button class="delete-btn" @click="deleteUser(user)">删除</button>
+              <button
+                class="delete-btn"
+                @click="deleteUser(user)"
+                :disabled="user.username === currentUsername"
+                :title="user.username === currentUsername ? '不能删除自己' : ''"
+              >删除</button>
             </td>
           </tr>
         </tbody>
@@ -46,6 +57,7 @@ import LivenessDetection from './LivenessDetection.vue'
 const users = ref([])
 const showLivenessDialog = ref(false)
 const pendingAction = ref(null)
+const currentUsername = localStorage.getItem('name') || ''
 
 const fetchUsers = async () => {
   const res = await axios.get('/api/user_list/', {

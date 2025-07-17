@@ -19,7 +19,9 @@
             <td>{{ task.road_id }}</td>
             <td>{{ task.disease_type }}</td>
             <td>{{ task.severity }}</td>
-            <td><a :href="task.url" target="_blank">查看</a></td>
+            <td>
+              <a href="javascript:;" @click="handleViewImages(task)">查看</a>
+            </td>
             <td>
               <div class="custom-multiselect" @click="toggleDropdown(task)" :tabindex="0" @blur="closeDropdown(task)">
                 <div class="selected-tags">
@@ -74,6 +76,24 @@
         </div>
       </div>
     </div>
+    <!-- 新增：图片弹窗 -->
+    <div v-if="imageDialog" class="view-dialog-mask" @click.self="handleCloseImageDialog">
+      <div class="view-dialog-box" style="max-width:700px;">
+        <div class="view-dialog-title">图片预览 <span class="view-dialog-close" @click="handleCloseImageDialog">×</span></div>
+        <div v-if="imageList.length === 0" style="padding: 24px 0; text-align: center; color: #888;">无图片可预览</div>
+        <div v-else style="display: flex; flex-wrap: wrap; gap: 12px;">
+          <img v-for="(img, idx) in imageList" :key="idx" :src="img" style="max-width: 200px; max-height: 160px; border-radius: 6px; cursor: pointer;" @click="showBigImage(img)" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 单张大图弹窗 -->
+    <div v-if="bigImageDialog" class="view-dialog-mask" @click.self="closeBigImage">
+      <div class="view-dialog-box" style="max-width:90vw;max-height:90vh;display:flex;flex-direction:column;align-items:center;">
+        <span style="align-self:flex-end;font-size:28px;color:#888;cursor:pointer;margin-bottom:8px;" @click="closeBigImage">×</span>
+        <img :src="bigImageUrl" style="max-width:80vw;max-height:80vh;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.18);" />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -91,6 +111,39 @@ const errorMsg = ref('')
 // 新增：查看弹窗相关
 const viewDialog = ref(false)
 const viewImages = ref([]) // [{username, image}]
+
+// 新增：图片弹窗相关
+const imageDialog = ref(false)
+const imageList = ref([])
+const bigImageDialog = ref(false)
+const bigImageUrl = ref('')
+
+function handleViewImages(task) {
+  if (!task.description || !Array.isArray(task.description)) {
+    imageList.value = []
+  } else {
+    imageList.value = task.description
+      .filter(item => item.url && /\.(jpg|jpeg|png|gif)$/i.test(item.url))
+      .map(item => {
+        let url = item.url.replace(/\\/g, '/')
+        if (!url.startsWith('http')) url = `/media/road/${url}`
+        return url
+      })
+  }
+  imageDialog.value = true
+}
+function handleCloseImageDialog() {
+  imageDialog.value = false
+  imageList.value = []
+}
+function showBigImage(url) {
+  bigImageUrl.value = url
+  bigImageDialog.value = true
+}
+function closeBigImage() {
+  bigImageDialog.value = false
+  bigImageUrl.value = ''
+}
 
 // 加载病害任务
 async function loadTasks() {

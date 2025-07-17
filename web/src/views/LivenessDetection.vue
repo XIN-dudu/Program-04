@@ -4,7 +4,7 @@
       <button v-if="dialogMode" class="mac-dialog-close" @click="$emit('close')">×</button>
       <h1 class="liveness-title-mac">身份验证</h1>
       <div class="liveness-desc-mac">
-        <span>请对准摄像头并眨眼，然后点击 <b>“开始录制”</b> 上传视频进行身份认证（视频录制时长不少于3秒）</span>
+        <span>请对准摄像头并眨眼，然后点击 <b>“开始录制”</b> 上传视频进行身份认证（视频录制时长不少于2秒）</span>
         <div class="liveness-tip-mac">⚠️ 请确保人脸始终在摄像头画面内，避免遮挡和离开！</div>
       </div>
       <div v-if="step === 1">
