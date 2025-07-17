@@ -58,7 +58,7 @@
             <div class="form-group form-group-code">
               <label class="code-label">验证码：</label>
               <input v-model="emailForm.code" type="text" required placeholder="请输入验证码" class="code-input">
-              <button type="button" @click="handleSendEmailCode" class="code-btn">获取验证码</button>
+              <button type="button" :disabled="sendCodeDisabled" @click="sendEmailCode" class="code-btn">{{ sendCodeText }}</button>
             </div>
             <!-- 点选验证码区域（与账号密码登录共用） -->
             <div class="form-group" v-if="captchaImg">
@@ -84,7 +84,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
@@ -181,7 +181,13 @@ const handleLogin = async () => {
 }
 
 // 新增邮箱验证码校验逻辑
-const handleSendEmailCode = async () => {
+const sendCodeDisabled = ref(false)
+const sendCodeTimer = ref(0)
+const sendCodeText = ref('发送验证码')
+let timer = null
+
+const sendEmailCode = async () => {
+  if (sendCodeDisabled.value) return
   if (captchaClicks.value.length !== 4) {
     alert('请依次点击4个目标文字')
     return
@@ -201,11 +207,24 @@ const handleSendEmailCode = async () => {
       fetchCaptcha()
       return
     }
-    // 验证码通过后再发送邮箱验证码
+    // 校验通过后发送邮箱验证码
     const res = await axios.post('/api/send_email_code', {
       email: emailForm.value.email
     }, { withCredentials: true })
-    alert(res.data.msg || '验证码已发送')
+    // alert(res.data.msg || '验证码已发送')  // 发送成功后不再弹窗
+    // 启动倒计时
+    sendCodeDisabled.value = true
+    sendCodeTimer.value = 30
+    sendCodeText.value = '30秒后可重发'
+    timer = setInterval(() => {
+      sendCodeTimer.value--
+      sendCodeText.value = sendCodeTimer.value + '秒后可重发'
+      if (sendCodeTimer.value <= 0) {
+        clearInterval(timer)
+        sendCodeDisabled.value = false
+        sendCodeText.value = '发送验证码'
+      }
+    }, 1000)
   } catch (err) {
     let msg = err.response?.data?.msg || err.message || '发送失败'
     alert(msg)
@@ -266,6 +285,7 @@ const handleEmailLogin = async () => {
     fetchCaptcha()
   }
 }
+onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
   
   <style scoped>

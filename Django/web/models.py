@@ -81,7 +81,7 @@ class UserProfile(models.Model):
     username = models.CharField(max_length=20, unique=True)
     password = models.CharField(max_length=128)
     email = models.EmailField(max_length=50, unique=True)
-    phone = models.CharField(max_length=20, unique=True)
+    phone = models.CharField(max_length=50, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     # 百度人脸库ID，用于后续人脸识别
     face_id = models.CharField(max_length=128, blank=True, null=True)
@@ -119,6 +119,7 @@ class SystemLog(models.Model):
     action = models.CharField(max_length=100)  # 描述用户操作
     timestamp = models.DateTimeField(auto_now_add=True)  # 操作时间
     details = models.TextField(blank=True, null=True)  # 其他操作细节 
+    alert_event = models.ForeignKey('AlertEvent', null=True, blank=True, on_delete=models.SET_NULL)  # 新增：关联告警事件
     def __str__(self):
         return f"{self.user.username} - {self.action} at {self.timestamp}"
 
@@ -141,7 +142,7 @@ class AlertEvent(models.Model):
     status = models.CharField(max_length=20)
     related_data = models.JSONField()
     user = models.ForeignKey('UserProfile', on_delete=models.SET_NULL, null=True, blank=True)
-
+    video = models.FileField(upload_to='alert_videos/', null=True, blank=True)
     class Meta:
         db_table = 'web_alertevent'
 

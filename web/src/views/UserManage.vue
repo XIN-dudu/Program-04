@@ -16,7 +16,7 @@
             <td>{{ user.username }}</td>
             <td>{{ user.email }}</td>
             <td>
-              <select v-model="user.permission" @change="updatePermission(user)">
+              <select v-model="user.permission" @change="updatePermission(user)" class="perm-select">
                 <option value="0">普通用户</option>
                 <option value="1">维修工</option>
                 <option value="2">管理员</option>
@@ -70,49 +70,78 @@ onMounted(fetchUsers)
 <style scoped>
 .user-manage-bg {
   min-height: 100vh;
-  background: #f4f4f4;
+  background: #f7f8fa;
   display: flex;
-  justify-content: center;
   align-items: flex-start;
-  padding-top: 60px;
+  justify-content: center;
+  padding-top: 40px;
 }
 .user-manage-container {
-  background: rgba(255,255,255,0.95);
-  border-radius: 18px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
-  padding: 32px 28px;
-  min-width: 600px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  padding: 28px 28px 18px 28px;
+  min-width: 900px;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 .user-manage-title {
-  text-align: center;
-  font-size: 1.6rem;
-  font-weight: bold;
-  margin-bottom: 24px;
+  text-align: left;
+  font-size: 22px;
+  color: #222;
+  font-weight: 600;
+  margin-bottom: 18px;
+  letter-spacing: 1px;
 }
 .user-table {
   width: 100%;
   border-collapse: collapse;
   background: #fff;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: none;
 }
 .user-table th, .user-table td {
-  border: 1px solid #e0e0e0;
   padding: 10px 8px;
   text-align: center;
+  border-bottom: 1px solid #ececec;
+  font-size: 15px;
 }
 .user-table th {
-  background: #f7f7f7;
+  background: #f5f7fa;
+  color: #3a5a8c;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.user-table tr:last-child td {
+  border-bottom: none;
+}
+.perm-select {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #d0d7e2;
+  background: #fff;
+  font-size: 14px;
+  outline: none;
+  transition: border 0.2s;
+}
+.perm-select:focus {
+  border: 1.5px solid #3a5a8c;
 }
 .delete-btn {
-  background: #ff6b6b;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 6px 16px;
+  background: #fff;
+  color: #e74c3c;
+  border: 1px solid #e74c3c;
+  border-radius: 4px;
+  padding: 5px 14px;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  font-size: 1rem;
-  transition: background 0.2s;
+  transition: background 0.2s, color 0.2s;
+  box-shadow: none;
 }
 .delete-btn:hover {
-  background: #ff5252;
+  background: #e74c3c;
+  color: #fff;
 }
 </style> 

@@ -1,82 +1,455 @@
 <template>
   <div class="shandong-map-container">
-    <h2>山东省地图与人口分布（百度地图）</h2>
-    <div ref="mapContainer" class="map-chart"></div>
+    <div class="left-panel">
+      <div class="button-group">
+        <button 
+          @click="showPopulationData" 
+          class="action-btn"
+          :class="{ active: currentView === 'population' }"
+        >
+          人口分布
+        </button>
+        <button 
+          @click="showWeekFlow" 
+          class="action-btn"
+          :class="{ active: currentView === 'weekflow' }"
+        >
+          周客流量
+        </button>
+      </div>
+      <transition-group name="slide-stack" tag="div" class="stack-group">
+        <div v-if="currentView === 'weekflow'" key="analysis" class="analysis-controls">
+          <h4>分析类型</h4>
+          <div class="radio-group">
+            <label class="radio-item">
+              <input type="radio" value="both" v-model="analysisType" @change="changeAnalysisType('both')" />
+              <span>起点+终点</span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" value="origin" v-model="analysisType" @change="changeAnalysisType('origin')" />
+              <span>仅起点</span>
+            </label>
+            <label class="radio-item">
+              <input type="radio" value="destination" v-model="analysisType" @change="changeAnalysisType('destination')" />
+              <span>仅终点</span>
+            </label>
+          </div>
+          <div v-if="analysisSummary.total_trips > 0" class="summary-info">
+            <h4>统计摘要</h4>
+            <div class="summary-item"><span>总行程数：</span><span class="summary-value">{{ analysisSummary.total_trips }}</span></div>
+            <div class="summary-item"><span>日均行程：</span><span class="summary-value">{{ analysisSummary.avg_trips_per_day }}</span></div>
+            <div class="summary-item"><span>峰值时段：</span><span class="summary-value">{{ analysisSummary.peak_hour }}</span></div>
+            <div class="summary-item"><span>峰值日期：</span><span class="summary-value">{{ analysisSummary.peak_day }}</span></div>
+          </div>
+        </div>
+        <div class="button-group" key="weather-btn">
+          <button 
+            @click="showTrafficWeather" 
+            class="action-btn"
+            :class="{ active: currentView === 'traffic-weather' }"
+          >
+            客流与天气
+          </button>
+        </div>
+      </transition-group>
+    </div>
+    <div class="right-panel">
+      <div ref="chart" class="map-chart"></div>
+      <div v-if="currentView === 'population' && showDataSource" class="data-source">
+        数据来源：济南市统计局2022年数据
+      </div>
+      <div v-if="currentView === 'weekflow' && showDataSource" class="data-source-bottom">
+        数据来源：济南市出租车GPS轨迹数据统计
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
-// 山东省各地市经纬度及人口数据（示例）
-const cityData = [
-  { name: '济南市', lng: 117.0009, lat: 36.6758, value: 920 },
-  { name: '青岛市', lng: 120.3826, lat: 36.0671, value: 950 },
-  { name: '烟台市', lng: 121.4479, lat: 37.4638, value: 700 },
-  { name: '潍坊市', lng: 119.1618, lat: 36.7069, value: 650 },
-  { name: '临沂市', lng: 118.3408, lat: 35.0724, value: 800 },
-  { name: '淄博市', lng: 118.0549, lat: 36.8131, value: 600 },
-  { name: '济宁市', lng: 116.5872, lat: 35.4146, value: 750 },
-  { name: '泰安市', lng: 117.0876, lat: 36.2009, value: 500 },
-  { name: '威海市', lng: 122.1204, lat: 37.5131, value: 400 },
-  { name: '日照市', lng: 119.5269, lat: 35.4164, value: 350 },
-  { name: '德州市', lng: 116.3646, lat: 37.4413, value: 420 },
-  { name: '聊城市', lng: 115.9854, lat: 36.4570, value: 410 },
-  { name: '滨州市', lng: 117.9774, lat: 37.3882, value: 390 },
-  { name: '菏泽市', lng: 115.4807, lat: 35.2336, value: 600 },
-  { name: '枣庄市', lng: 117.3237, lat: 34.8105, value: 380 }
+import * as echarts from 'echarts';
+
+const populationData = {
+  '历下区': 620000,
+  '市中区': 710000,
+  '槐荫区': 670000,
+  '天桥区': 620000,
+  '历城区': 1160000,
+  '长清区': 620000,
+  '章丘区': 1100000,
+  '济阳区': 340000,
+  '莱芜区': 970000,
+  '钢城区': 210000,
+  '平阴县': 350000,
+  '商河县': 590000
+};
+const colorRange = [
+  '#e0f3f8', '#abd9e9', '#74add1', '#4575b4', '#313695'
 ];
 
 export default {
   name: 'ShandongMap',
+  data() {
+    return {
+      currentView: null,
+      showDataSource: false,
+      chart: null,
+      weekFlowData: {},
+      timeSlots: [],
+      analysisType: 'both',
+      analysisSummary: {},
+      weatherFlowChart: null,
+      weatherFlowData: [],
+    };
+  },
   mounted() {
-    this.initBMap();
+    this.loadGeoJSONAndRender();
   },
   methods: {
-    initBMap() {
-      // eslint-disable-next-line
-      const map = new window.BMap.Map(this.$refs.mapContainer);
-      map.centerAndZoom(new window.BMap.Point(118.0009, 36.6758), 8);
-      map.enableScrollWheelZoom(true);
-      cityData.forEach(city => {
-        const point = new window.BMap.Point(city.lng, city.lat);
-        // marker
-        const marker = new window.BMap.Marker(point);
-        map.addOverlay(marker);
-        // 气泡圆，半径与人口相关
-        const circle = new window.BMap.Circle(point, city.value * 200, {
-          strokeColor: '#0288d1',
-          strokeWeight: 2,
-          strokeOpacity: 0.6,
-          fillColor: '#0288d1',
-          fillOpacity: 0.18
-        });
-        map.addOverlay(circle);
-        // 信息窗口
-        const info = `<b>${city.name}</b><br/>人口：${city.value} 万人`;
-        marker.addEventListener('mouseover', function() {
-          const infoWin = new window.BMap.InfoWindow(info);
-          marker.openInfoWindow(infoWin);
-        });
-        marker.addEventListener('mouseout', function() {
-          marker.closeInfoWindow();
-        });
+    async loadGeoJSONAndRender() {
+      const res = await fetch('/static/data/JiNan.json');
+      const jinanGeoJSON = await res.json();
+      echarts.registerMap('jinan', jinanGeoJSON);
+      this.initECharts();
+    },
+    initECharts() {
+      this.chart = echarts.init(this.$refs.chart);
+      this.renderBasicMap();
+    },
+    renderBasicMap() {
+      if (this.chart) this.chart.clear();
+      const option = {
+        tooltip: { trigger: 'item', formatter: params => params.name },
+        series: [{
+          name: '济南市', type: 'map', map: 'jinan', roam: true,
+          label: { show: true, color: '#222', fontSize: 12 },
+          itemStyle: { areaColor: '#f5f5f5', borderColor: '#999', borderWidth: 1 },
+          emphasis: { itemStyle: { areaColor: '#e0e0e0' } },
+          data: []
+        }]
+      };
+      this.chart.setOption(option, true);
+    },
+    renderPopulationMap() {
+      if (this.chart) this.chart.clear();
+      const populationDataArr = Object.entries(populationData).map(([name, value]) => ({ name, value }));
+      const option = {
+        tooltip: {
+          trigger: 'item',
+          formatter: params => `${params.name}<br/>人口：${params.value ? params.value.toLocaleString() : '无数据'}`
+        },
+        visualMap: {
+          min: 200000, max: 1200000, left: 'left', top: 'bottom', text: ['高','低'],
+          inRange: { color: colorRange }, calculable: true
+        },
+        series: [{
+          name: '济南分区', type: 'map', map: 'jinan', roam: true,
+          label: { show: true, color: '#222', fontSize: 12 },
+          itemStyle: { borderColor: '#333', borderWidth: 1 },
+          emphasis: { itemStyle: { areaColor: '#ffd700' } },
+          data: populationDataArr
+        }]
+      };
+      this.chart.setOption(option, true);
+    },
+    async renderWeekFlowChart() {
+      if (this.chart) this.chart.clear();
+      try {
+        const response = await fetch(`/api/od_analysis/?time_slots=12&analysis_type=${this.analysisType}`);
+        const data = await response.json();
+        if (data.error) {
+          console.error('获取数据失败:', data.error);
+          this.useSimulatedData();
+          return;
+        }
+        this.timeSlots = data.time_slots;
+        this.weekFlowData = data.week_data;
+        this.analysisSummary = data.summary;
+      } catch (error) {
+        console.error('API请求失败:', error);
+        this.useSimulatedData();
+      }
+      const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      const series = weekDays.map((day, index) => ({
+        name: this.weekFlowData[day]?.name || `周${index + 1}`,
+        type: 'bar',
+        data: this.weekFlowData[day]?.data || [],
+        itemStyle: { color: `hsl(${index * 51}, 70%, 60%)` }
+      }));
+      let title = '济南市周客流量时间分布';
+      if (this.analysisType === 'origin') title = '济南市周起点客流量时间分布';
+      else if (this.analysisType === 'destination') title = '济南市周终点客流量时间分布';
+      const option = {
+        title: { text: title, left: 'center', textStyle: { fontSize: 18, fontWeight: 'bold' } },
+        tooltip: {
+          trigger: 'axis', axisPointer: { type: 'shadow' },
+          formatter: function(params) {
+            let result = `${params[0].axisValue}<br/>`;
+            params.forEach(param => { result += `${param.seriesName}: ${param.value} 次<br/>`; });
+            return result;
+          }
+        },
+        legend: { data: series.map(s => s.name), top: 30, left: 'center' },
+        grid: { left: '3%', right: '4%', bottom: '15%', top: '15%', containLabel: true },
+        xAxis: {
+          type: 'category', data: this.timeSlots, name: '时间', nameLocation: 'end', nameGap: 10,
+          axisLabel: { rotate: 45 }
+        },
+        yAxis: {
+          type: 'value', name: '打车次数', nameLocation: 'start', nameGap: 10, nameTextStyle: { align: 'left' }
+        },
+        series: series
+      };
+      this.chart.setOption(option, true);
+    },
+    useSimulatedData() {
+      this.timeSlots = [
+        '00:00-02:00', '02:00-04:00', '04:00-06:00', '06:00-08:00',
+        '08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00',
+        '16:00-18:00', '18:00-20:00', '20:00-22:00', '22:00-24:00'
+      ];
+      const timePattern = [50, 30, 40, 200, 350, 280, 320, 300, 400, 450, 380, 200];
+      this.weekFlowData = {
+        monday: { name: '周一', data: timePattern.map(v => v + Math.floor(Math.random() * 50) - 25) },
+        tuesday: { name: '周二', data: timePattern.map(v => v + Math.floor(Math.random() * 50) - 25) },
+        wednesday: { name: '周三', data: timePattern.map(v => v + Math.floor(Math.random() * 50) - 25) },
+        thursday: { name: '周四', data: timePattern.map(v => v + Math.floor(Math.random() * 50) - 25) },
+        friday: { name: '周五', data: timePattern.map(v => v + Math.floor(Math.random() * 50) - 25 + 50) },
+        saturday: { name: '周六', data: timePattern.map(v => v + Math.floor(Math.random() * 50) - 25 + 30) },
+        sunday: { name: '周日', data: timePattern.map(v => v + Math.floor(Math.random() * 50) - 25 + 20) }
+      };
+      const allData = Object.values(this.weekFlowData).flatMap(day => day.data);
+      const totalTrips = allData.reduce((sum, val) => sum + val, 0);
+      const avgTripsPerDay = Math.round(totalTrips / 7);
+      const hourlyTotals = new Array(12).fill(0);
+      Object.values(this.weekFlowData).forEach(day => {
+        day.data.forEach((val, idx) => { hourlyTotals[idx] += val; });
       });
-    }
+      const peakHourIdx = hourlyTotals.indexOf(Math.max(...hourlyTotals));
+      const dailyTotals = Object.values(this.weekFlowData).map(day => day.data.reduce((sum, val) => sum + val, 0));
+      const peakDayIdx = dailyTotals.indexOf(Math.max(...dailyTotals));
+      const weekDayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+      this.analysisSummary = {
+        total_trips: totalTrips,
+        avg_trips_per_day: avgTripsPerDay,
+        peak_hour: this.timeSlots[peakHourIdx],
+        peak_day: weekDayNames[peakDayIdx],
+        analysis_type: this.analysisType
+      };
+    },
+    showPopulationData() {
+      this.currentView = 'population';
+      this.showDataSource = true;
+      this.renderPopulationMap();
+    },
+    showWeekFlow() {
+      this.currentView = 'weekflow';
+      this.showDataSource = true;
+      this.renderWeekFlowChart();
+    },
+    async showTrafficWeather() {
+      this.currentView = 'traffic-weather';
+      this.showDataSource = false;
+      await this.renderWeatherFlowChart();
+    },
+    async renderWeatherFlowChart() {
+      if (!this.weatherFlowChart) {
+        this.weatherFlowChart = echarts.init(this.$refs.chart);
+      } else {
+        this.weatherFlowChart.clear();
+      }
+      try {
+        const res = await fetch('/api/weather_flow_analysis/');
+        const data = await res.json();
+        this.weatherFlowData = data;
+      } catch (e) {
+        this.weatherFlowData = [];
+      }
+      if (!this.weatherFlowData.length) return;
+      const times = this.weatherFlowData.map(d => d.time);
+      const flows = this.weatherFlowData.map(d => d.flow);
+      const temps = this.weatherFlowData.map(d => d.temperature);
+      const hums = this.weatherFlowData.map(d => d.humidity);
+      const winds = this.weatherFlowData.map(d => d.wind_speed);
+      const precs = this.weatherFlowData.map(d => d.precip);
+      const option = {
+        title: { text: '天气变化与客流量关系', left: 'center', textStyle: { fontSize: 18, fontWeight: 'bold' } },
+        tooltip: {
+          trigger: 'axis', axisPointer: { type: 'cross' },
+          formatter: params => {
+            let t = params[0].axisValue;
+            let html = `<b>${t}</b><br/>`;
+            params.forEach(p => { html += `${p.marker}${p.seriesName}: <b>${p.value}</b><br/>`; });
+            return html;
+          }
+        },
+        legend: { data: ['客流量', '温度', '湿度', '风速', '降水量'], top: 40, left: 'center' },
+        grid: { left: '5%', right: '8%', bottom: '10%', top: 80, containLabel: true },
+        xAxis: { type: 'category', data: times, axisLabel: { rotate: 45 } },
+        yAxis: [
+          { type: 'value', name: '客流量', position: 'left', min: 0, axisLine: { show: true }, axisLabel: { color: '#1890ff' } },
+          { type: 'value', name: '温度(°C)', position: 'right', offset: 0, axisLine: { show: true }, axisLabel: { color: '#faad14' } }
+        ],
+        dataZoom: [ { type: 'slider', start: 0, end: 100, xAxisIndex: 0 } ],
+        series: [
+          { name: '客流量', type: 'line', yAxisIndex: 0, data: flows, smooth: true, lineStyle: { color: '#1890ff' }, emphasis: { focus: 'series' } },
+          { name: '温度', type: 'line', yAxisIndex: 1, data: temps, smooth: true, lineStyle: { color: '#faad14' }, emphasis: { focus: 'series' } },
+          { name: '湿度', type: 'line', yAxisIndex: 1, data: hums, smooth: true, lineStyle: { color: '#52c41a' }, emphasis: { focus: 'series' } },
+          { name: '风速', type: 'line', yAxisIndex: 1, data: winds, smooth: true, lineStyle: { color: '#722ed1' }, emphasis: { focus: 'series' } },
+          { name: '降水量', type: 'line', yAxisIndex: 1, data: precs, smooth: true, lineStyle: { color: '#13c2c2' }, emphasis: { focus: 'series' } }
+        ]
+      };
+      this.weatherFlowChart.setOption(option, true);
+    },
+    changeAnalysisType(type) {
+      this.analysisType = type;
+      if (this.currentView === 'weekflow') {
+        this.renderWeekFlowChart();
+      }
+    },
   }
 };
 </script>
 
 <style scoped>
 .shandong-map-container {
-  padding: 32px;
+  display: flex;
+  height: calc(100vh - 120px);
+  background: #f5f5f5;
+  margin-bottom: 20px;
+}
+.left-panel {
+  width: 300px;
+  background: white;
+  padding: 20px;
+  box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+}
+.right-panel {
+  flex: 1;
+  position: relative;
+  margin-bottom: 20px;
 }
 .map-chart {
   width: 100%;
-  height: 700px;
-  min-height: 500px;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(2,136,209,0.08);
-  background: #fff;
-  border: 1px solid #ccc;
-  margin-top: 24px;
+  height: 100%;
+}
+.button-group {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+.action-btn {
+  padding: 15px 20px;
+  border: none;
+  border-radius: 8px;
+  background: #f0f0f0;
+  color: #333;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+}
+.action-btn:hover {
+  background: #e0e0e0;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+.action-btn.active {
+  background: #1890ff;
+  color: white;
+}
+.data-source {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(0,0,0,0.7);
+  color: white;
+  padding: 10px 15px;
+  border-radius: 5px;
+  font-size: 12px;
+  z-index: 1000;
+}
+.data-source-bottom {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(0,0,0,0.7);
+  color: white;
+  padding: 10px 15px;
+  border-radius: 5px;
+  font-size: 12px;
+  z-index: 1000;
+}
+.stack-group {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.slide-stack-enter-active, .slide-stack-leave-active {
+  transition: all 0.4s cubic-bezier(.55,0,.1,1);
+}
+.slide-stack-enter-from, .slide-stack-leave-to {
+  opacity: 0;
+  transform: translateY(-30px);
+}
+.slide-stack-move {
+  transition: all 0.4s cubic-bezier(.55,0,.1,1);
+}
+.analysis-controls {
+  margin-top: 20px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+.analysis-controls h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 14px;
+  font-weight: 600;
+}
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.radio-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #555;
+}
+.radio-item input[type="radio"] {
+  margin: 0;
+  cursor: pointer;
+}
+.radio-item span {
+  cursor: pointer;
+}
+.summary-info {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #e9ecef;
+}
+.summary-info h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 14px;
+  font-weight: 600;
+}
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+  font-size: 12px;
+  color: #666;
+}
+.summary-value {
+  font-weight: 600;
+  color: #1890ff;
 }
 </style> 

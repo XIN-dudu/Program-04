@@ -21,22 +21,20 @@ const routes = [
         component: () => import('@/views/urbanTraffic/Hotspot.vue')
       },
       {
-        path: 'weekflow',
-        component: () => import('@/views/urbanTraffic/Weekflow.vue')
-      },
-      {
-        path: 'road',
-        component: () => import('@/views/urbanTraffic/Road.vue')
+        path: 'shandongmap',
+        component: () => import('@/views/urbanTraffic/ShandongMap.vue')
       }
+      // 已删除 weekflow 和 road 路由
     ]
   },
   { path: '/history', component: () => import('../views/History.vue'), meta: { requiresAuth: true } },
   { path: '/login', component: () => import('../views/Login.vue') },
+  { path: '/repair', component: () => import('../views/Repair.vue') },
   { path: '/register', component: () => import('../views/Register.vue') },
   { path: '/face-recognition', component: () => import('../views/FaceRecognition.vue'), meta: { requiresAuth: true } },
   { path: '/liveness', component: () => import('../views/LivenessDetection.vue'), meta: { requiresAuth: true } },
   { path: '/profile', component: () => import('../views/UserProfile.vue'), meta: { requiresAuth: true } },
-  { path: '/log', component: () => import('../views/Log.vue'), meta: { requiresAuth: true } },  
+  { path: '/systemlog', component: () => import('../views/SystemLog.vue'), meta: { requiresAuth: true } },  
   {
     path: '/user-manage',
     name: 'UserManage',

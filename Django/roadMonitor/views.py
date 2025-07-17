@@ -1,5 +1,6 @@
-import random
-import time
+import json
+import traceback
+import uuid
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -15,23 +16,65 @@ from datetime import datetime, timedelta
 from ultralytics import YOLO
 import cv2
 from django.db import connection
+from sklearn.cluster import DBSCAN
+import numpy as np
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import permission_classes
 
-from .serializers import RoadRecordSerializer
-
-from .models import roadRecord
+from .yolo_model import run_detection_in_memory
 
 
-# model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
+from .serializers import RoadRecordSerializer, RoadSerializer
 
+from .models import roadRecord, RepairAssignment, RepairCompletionImage
+from web.models import UserProfile
+
+pixel_to_meter = 0.001
 CLASS_LABELS = {
     0: "D00",  # 纵向裂纹
     1: "D10",  # 横向裂纹
     2: "D20",  # 龟裂
-    3: "D40",  # 坑槽
-    4: "repair"  # 修补区域
+    3: "D40",  # 坑洼
+    4: "repair"  # 修补
 }
 
+types = ['无', '纵向裂纹', '横向裂纹', '龟裂', '坑洼', '修补']
+risk_type = ['SAFE', 'LOW', 'MID', 'HIGH']
+
 model = YOLO(os.path.join(settings.BASE_DIR, "best2.pt"))
+
+def checkSeverity(length, area, type):
+    sum = 0.0
+    if type == 0 or type == 1:
+        sum += 5
+    else:
+        sum += type * 5
+    sum += length
+    sum += area
+    if sum <= 10 or type == 0 or type == 5:
+        return 0
+    elif sum <= 30 and sum > 10:
+        return 1
+    elif sum > 30 and sum <= 50:
+        return 2
+    return 3
+
+def getLabel(label):
+    type = 0
+    if label == "D00":
+        type = 1
+    elif label == "D10":
+        type = 2
+    elif label == "D20":
+        type = 3
+    elif label == "D40":
+        type = 4
+    elif label == "repair":
+        type = 5
+    return type
+
+def tostring(length, area):
+    return f'裂纹长度:{length:.2f}米\n裂纹面积:{area:.2f}平方米'
 
 def calculate_dimensions(boxes):
     """计算检测框的尺寸信息"""
@@ -52,11 +95,15 @@ def calculate_dimensions(boxes):
     
     return max_length, total_area
 
-def process_video_task(video_path, output_subdir, name):
+def process_video_task(video_path, output_subdir, name, roadId):
     try:
+        data = []
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise ValueError("无法打开视频文件")
+        
+        previous_frame = None
+        change_threshold = 0.001  # 变化阈值（总像素的1%)
         # 创建输出目录
         output_dir = os.path.join(settings.MEDIA_ROOT, output_subdir)
         os.makedirs(output_dir, exist_ok=True)
@@ -70,6 +117,7 @@ def process_video_task(video_path, output_subdir, name):
         max_length = 0.0
         total_area = 0.0
         frame_count = 0
+        count = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -78,12 +126,57 @@ def process_video_task(video_path, output_subdir, name):
             if frame_count % 5 == 0 :
                 # 调整帧尺寸
                 frame = cv2.resize(frame, (width, height))
+                
+                change_detected = False
+                if previous_frame is not None:
+                    # 计算绝对差异
+                    diff = cv2.absdiff(frame, previous_frame)
+                    
+                    # 转换为灰度图并二值化
+                    gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+                    _, thresh = cv2.threshold(gray_diff, 25, 255, cv2.THRESH_BINARY)
+                    
+                    # 计算变化区域占比
+                    change_ratio = cv2.countNonZero(thresh) / (width * height)
+                    change_detected = change_ratio > change_threshold
+                    print(change_ratio)
+                
+                # 更新前一帧
+                previous_frame = frame.copy()
+
                 if frame_count % 5 == 0:
                     results = model(frame)
                 if results and len(results[0].boxes) > 0:
-                    current_max, current_area = calculate_dimensions(results[0].boxes)
-                    max_length = max(max_length, current_max)
-                    total_area += current_area
+                    boxes = results[0].boxes
+                    classes = boxes.cls.cpu().numpy()  # 获取类别索引
+                    confidences = boxes.conf.cpu().numpy()  # 获取置信度
+                    # 找到最高置信度的检测结果
+                    main_idx = confidences.argmax()
+                    class_idx = int(classes[main_idx])
+                    label = CLASS_LABELS.get(class_idx, "unknown")
+                    
+                    current_length, current_area = calculate_dimensions(results[0].boxes)
+                    max_length = max(max_length, current_length)
+                    if change_detected:
+                        #保存这一帧的图片
+                        saved_frames_dir = os.path.join(settings.MEDIA_ROOT, 'road', 'video', os.path.splitext(name)[0])
+                        print(saved_frames_dir)
+                        os.makedirs(saved_frames_dir, exist_ok=True)
+                        
+                        frame_filename = f"{count}.jpg"
+                        frame_path = os.path.join(saved_frames_dir, frame_filename)
+                        # 保存标注后的帧
+                        cv2.imwrite(frame_path, annotated_frame)  # 使用带标注的帧
+                        data.append({
+                            'disease_type': getLabel(label),
+                            'length': current_length * pixel_to_meter,
+                            'area': current_area * (pixel_to_meter**2),
+                            'severity': checkSeverity(current_length, current_area, getLabel(label)),
+                            'url': os.path.join('video', os.path.splitext(name)[0], frame_filename)
+                            }) 
+                        count += 1
+                        total_area += current_area
+
                 # YOLO推理
                 results = model(frame)
                 annotated_frame = results[0].plot()
@@ -98,7 +191,7 @@ def process_video_task(video_path, output_subdir, name):
             'rel_url': rel_url,
             'max_length': max_length,
             'total_area': total_area
-        }
+        }, data
  
     except Exception as e:
         # 记录详细日志
@@ -106,6 +199,13 @@ def process_video_task(video_path, output_subdir, name):
 
 
 # Create your views here.
+
+@api_view(['GET'])
+def test_get(request):
+    records = roadRecord.objects.all()
+    serializer = RoadSerializer(records, many=True)
+    #print(serializer.data)
+    return Response(serializer.data)
 
 # #获取路面图像信息
 @api_view(['POST'])
@@ -144,35 +244,48 @@ def upload_image(request):
     record = roadRecord()
     record.road_id = roadId
     record.detection_time = datetime.now()
-    # record.length = random.uniform(1, 10)
-    # record.area = random.uniform(1, 100)
     record.path = file.name
-    # record.disease_type = 1
-    record.severity = 1
 
-    # 视频保存
+    # 保存
     subdir = 'road'
-    save_path = os.path.join(subdir, file.name)
-    filename = default_storage.save(save_path, file)
-    local_path = default_storage.path(filename)
+    save_path = os.path.join(subdir, 'upload', file.name)
+    if not default_storage.exists(save_path):
+        default_storage.save(save_path, file)
+    local_path = default_storage.path(save_path)
+    # print(local_path)
     # 判断是否为视频文件
     if file.content_type.startswith('video/'):
         try:
-            task = process_video_task(local_path, 'road/results', file.name)
+            data = []
+            record.file_type = 0
+            task, data = process_video_task(local_path, 'road/results', file.name, roadId)
             # 构建视频访问URL
-            res = request.build_absolute_uri(task)
-            record.length = res['max_length'] * 0.01  # 应用转换系数
-            record.area = res['total_area'] * (0.01**2)
+            record.length = task['max_length'] * pixel_to_meter
+            record.area = task['total_area'] * (pixel_to_meter**2)
+            record.disease_type = 0
+            record.severity = checkSeverity(record.length, record.area, 0)
+            json_data = json.dumps(data, indent=4)
+            record.description = data
+            #print(json_data)
             record.save()
-            video_url = res['rel_url']
-            print(video_url)
-            return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "video", "media_url": video_url}, status=200)
+            r = roadRecord.objects.filter(
+                path = file.name,
+                road_id = roadId,
+            )
+            serializer = RoadSerializer(r)
+            if r.exists() == False:
+                record.save()
+            serializer = RoadSerializer(r, many=True)
+            return Response(serializer.data,
+                            status=200)
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
- 
+
     # 判断是否为图片文件
     if file.content_type.startswith('image/'):
         try:
+            data = []
+            record.file_type = 1
             results = model(
                 local_path,
                 save=True,
@@ -181,6 +294,9 @@ def upload_image(request):
                 name='results',    # 创建results子目录
                 exist_ok=True
             )
+            record.length = 0.0
+            record.area = 0.0
+            record.disease_type = 0
             if results and len(results[0].boxes) > 0:
                 # 获取检测结果
                 boxes = results[0].boxes
@@ -196,46 +312,72 @@ def upload_image(request):
                 max_length, total_area = calculate_dimensions(boxes)
                 
                 # 应用物理尺寸转换
-                pixel_to_meter = 0.003
                 record.length = max_length * pixel_to_meter
                 record.area = total_area * (pixel_to_meter**2)
+                record.disease_type = getLabel(label)
 
-                # 根据标签生成动态响应
-                if label == "D00":
-                    record.disease_type = 1
-                elif label == "D10":
-                    record.disease_type = 2
-                elif label == "D20":
-                    record.disease_type = 3
-                elif label == "D40":
-                    record.disease_type = 4
-                elif label == "repair":
-                    record.disease_type = 5
-                    record.severity = 0
-            else:
-                record.length = 0.0
-                record.area = 0.0
-                record.disease_type = 0
-                record.severity = 0
-            record.save()
+            # 根据标签生成动态响应
+            record.severity = checkSeverity(record.length, record.area, record.disease_type)
             # 获取处理后的图片路径
             processed_dir = os.path.join(settings.MEDIA_ROOT, subdir, 'results')
-            print(processed_dir)
-            processed_filename = os.path.basename(file.name)
-            print(processed_filename)
-            processed_path = os.path.join(processed_dir, processed_filename)
-            # print(processed_path)
+            #print(processed_dir)
+            processed_filename = os.path.splitext(file.name)[0]
+            #print(processed_filename)
+            processed_path = os.path.join(processed_dir, f"{processed_filename}.jpg")
+            #print(processed_path)
             # 验证文件是否存在
             if not os.path.exists(processed_path):
                 return JsonResponse({'status': 'error', 'message': '处理后的图片未生成'}, status=500)
             # 构建完整的URL
-            relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', processed_filename)
+            relative_url = os.path.join(settings.MEDIA_URL, subdir, 'results', f"{processed_filename}.jpg")
             image_url = request.build_absolute_uri(relative_url)
             print(image_url)
-            return Response({'title' : '纵向裂纹', 'description': '检测到纵向裂缝约2.3米', 'severity': '中等', 'position': '翻斗花园123街区', "media_type": "image", 'media_url': image_url}, status=200)
+            data.append({
+                'disease_type': record.disease_type,
+                'length': record.length,
+                'area': record.area,
+                'severity': record.severity,
+                'url': f"results/{processed_filename}.jpg"
+                })
+            record.description = data
+            r = roadRecord.objects.filter(
+                path = file.name,
+                road_id = roadId,
+            )
+            if r.exists() == False:
+                record.save()
+            serializer = RoadSerializer(r, many=True)
+            #print(serializer.data)
+            #video_url = request.build_absolute_uri(task['rel_url'])
+            return Response(serializer.data,
+                            status=200)
         
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+# #获取监控录像信息，每10帧获取一次
+@api_view(['POST'])
+@parser_classes([MultiPartParser, FormParser])
+def upload_stream(request):
+    uploaded_file = request.FILES.get('file')
+    road_id = request.POST.get('roadId', 'unknown')
+
+    if not uploaded_file:
+        return Response({'error': '未上传文件'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        detections, full_image_base64 = run_detection_in_memory(uploaded_file)
+
+        return Response({
+            "road_id": road_id,
+            "description": detections,
+            "full_image_base64": full_image_base64
+        }, status=200)
+
+    except Exception as e:
+        traceback.print_exc()  # 打印错误堆栈，便于调试
+        return Response({'error': f'检测失败: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 @api_view(['GET'])
@@ -249,13 +391,24 @@ def history_get(request):
     示例返回：
         {"success": "ok"}
     """
+    unfinished_only = request.GET.get('unfinished_only')
     records = roadRecord.objects.all()
-    serializer = RoadRecordSerializer(records, many=True)
+    if unfinished_only:
+        filtered = []
+        for record in records:
+            assignments = record.assignments.all()
+            if not assignments:
+                filtered.append(record)
+            else:
+                if any(a.status != 'finished' for a in assignments):
+                    filtered.append(record)
+        records = filtered
+    serializer = RoadRecordSerializer(records, many=True, context={'request': request})
     print(serializer.data)
     return Response(serializer.data)
 
 @api_view(['DELETE'])
-def history_delete(request):
+def history_delete(request, diseaseId):
     """
     删除历史检测记录。
 
@@ -265,7 +418,49 @@ def history_delete(request):
     示例返回：
         {"success": "ok"}
     """
-    return Response({'success'})
+    try:
+        # 查询需要删除数据库的记录
+        records = roadRecord.objects.filter(
+            disease_id = diseaseId,
+        )
+        
+        if not records.exists():
+            return Response({'error': '记录不存在'}, status=404)
+        
+        import shutil
+
+        for record in records:
+            if record.path:
+                try:
+                    # 删除上传文件
+                    upload_path = os.path.join(settings.MEDIA_ROOT, 'road/upload', record.path)
+                    if os.path.exists(upload_path):
+                        os.remove(upload_path)
+
+                    # 删除检测结果图像（原始名）
+                    result_path = os.path.join(settings.MEDIA_ROOT, 'road/results', record.path)
+                    if os.path.exists(result_path):
+                        os.remove(result_path)
+
+                    # 删除检测结果图像（.jpg版本）
+                    jpg_result = os.path.join(settings.MEDIA_ROOT, 'road/results', f'{os.path.splitext(record.path)[0]}.jpg')
+                    if os.path.exists(jpg_result):
+                        os.remove(jpg_result)
+
+                    # 删除视频处理结果目录
+                    video_dir = os.path.join(settings.MEDIA_ROOT, 'road/video', f'{os.path.splitext(record.path)[0]}')
+                    if os.path.exists(video_dir) and os.path.isdir(video_dir):
+                        shutil.rmtree(video_dir)
+
+                except Exception as e:
+                    print(f"文件删除失败: {str(e)}")
+        # 删除数据库记录
+        records.delete()
+ 
+        return Response({'success': 'ok'})
+ 
+    except Exception as e:
+        return Response({'error': f'服务器错误: {str(e)}'}, status=500)
 
 @api_view(['GET'])
 def heatmap_data(request):
@@ -281,30 +476,124 @@ def heatmap_data(request):
     示例返回：
         {"points": [{"lng": 117.1, "lat": 36.6}, ...]}
     """
+    import pymysql
     date = request.GET.get('date', '0912')
     start_time = request.GET.get('start_time', '00:00:00')
     end_time = request.GET.get('end_time', '23:59:59')
-    # 文件路径
-    file_path = os.path.join(settings.BASE_DIR, f'..', 'pandas', 'data_clean_od_pairs', f'jn{date}_od_pairs.csv')
-    file_path = os.path.abspath(file_path)
-    if not os.path.exists(file_path):
-        return Response({'error': '数据文件不存在'}, status=404)
-    # 只读取部分数据，防止内存溢出
-    df = pd.read_csv(file_path, usecols=['O_LON', 'O_LAT', 'O_TIME'], nrows=500000)  # 可调整nrows
-    # 时间筛选
+    table_name = f'jn{date}_od_pairs'
+
+    # 正确拼接日期字符串
+    month = date[:2]
+    day = date[2:]
+    date_str = f"2013-{month}-{day}"
+    start_dt = f"{date_str} {start_time}"
+    end_dt = f"{date_str} {end_time}"
+
     try:
-        df['O_TIME'] = pd.to_datetime(df['O_TIME'])
-        start_dt = df['O_TIME'].dt.normalize()[0].strftime('%Y-%m-%d') + ' ' + start_time
-        end_dt = df['O_TIME'].dt.normalize()[0].strftime('%Y-%m-%d') + ' ' + end_time
-        mask = (df['O_TIME'] >= start_dt) & (df['O_TIME'] < end_dt)
-        df = df[mask]
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        sql = f"""
+            SELECT o_lon, o_lat, o_time
+            FROM {table_name}
+            WHERE o_time >= %s AND o_time < %s
+            LIMIT 500000
+        """
+        cursor.execute(sql, (start_dt, end_dt))
+        rows = cursor.fetchall()
+        points = [
+            {'lng': float(row[0]), 'lat': float(row[1])}
+            for row in rows if row[0] is not None and row[1] is not None
+        ]
+        cursor.close()
+        conn.close()
+        return Response({'points': points})
     except Exception as e:
-        return Response({'error': f'时间筛选失败: {str(e)}'}, status=400)
-    # 组装热力图点
-    points = [
-        {'lng': row['O_LON'], 'lat': row['O_LAT']} for _, row in df.iterrows()
-    ]
-    return Response({'points': points})
+        import traceback
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+
+@api_view(['GET'])
+def heatmap_clustered(request):
+    """
+    获取聚类后的热力图数据。
+    GET参数：
+        - start_time (string, 可选): 起始时间，格式如 '08:00:00'，默认00:00:00
+        - end_time (string, 可选): 结束时间，格式如 '08:15:00'，默认23:59:59
+        - date (string, 可选): 日期，格式如 '0912'，默认0912
+        - eps (float, 可选): DBSCAN聚类半径，单位为经纬度，默认0.002
+        - min_samples (int, 可选): DBSCAN最小聚类点数，默认10
+    返回：
+        - points (list): 热力图点列表，每个点含 lng(经度), lat(纬度), weight(聚类点数)
+    """
+    import pymysql
+    date = request.GET.get('date', '0912')
+    start_time = request.GET.get('start_time', '00:00:00')
+    end_time = request.GET.get('end_time', '23:59:59')
+    eps = float(request.GET.get('eps', 0.002))  # 约200米
+    min_samples = int(request.GET.get('min_samples', 10))
+    table_name = f'jn{date}_od_pairs'
+
+    # 拼接日期字符串
+    month = date[:2]
+    day = date[2:]
+    date_str = f"2013-{month}-{day}"
+    start_dt = f"{date_str} {start_time}"
+    end_dt = f"{date_str} {end_time}"
+
+    try:
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        sql = f"""
+            SELECT o_lon, o_lat
+            FROM {table_name}
+            WHERE o_time >= %s AND o_time < %s
+            LIMIT 500000
+        """
+        cursor.execute(sql, (start_dt, end_dt))
+        rows = cursor.fetchall()
+        points = [
+            [float(row[0]), float(row[1])]
+            for row in rows if row[0] is not None and row[1] is not None
+        ]
+        cursor.close()
+        conn.close()
+
+        if not points:
+            return Response({'points': []})
+
+        # DBSCAN聚类
+        X = np.array(points)
+        db = DBSCAN(eps=eps, min_samples=min_samples).fit(X)
+        labels = db.labels_
+
+        clusters = []
+        for label in set(labels):
+            if label == -1:
+                continue  # 忽略噪声点
+            cluster_points = X[labels == label]
+            center = cluster_points.mean(axis=0)
+            weight = len(cluster_points)
+            clusters.append({
+                "lng": float(center[0]),
+                "lat": float(center[1]),
+                "weight": weight
+            })
+
+        return Response({'points': clusters})
+    except Exception as e:
+        import traceback
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
 
 @api_view(['GET'])
 def week_flow(request):
@@ -403,3 +692,377 @@ def road_avg_speed(request):
         avg = day_map.get(day, 0)
         result.append({"date": day, "avg_speed": round(avg, 2) if avg else 0})
     return JsonResponse(result, safe=False)
+
+@api_view(['POST'])
+def assign_task(request, task_id):
+    """
+    为指定任务分配多个维修工。
+    POST参数：assigned_person_ids: [int, ...]
+    """
+    try:
+        task = roadRecord.objects.get(pk=task_id)
+    except roadRecord.DoesNotExist:
+        return Response({'msg': '任务不存在'}, status=404)
+    ids = request.data.get('assigned_person_ids', [])
+    if not isinstance(ids, list) or not ids:
+        return Response({'msg': '请选择至少一位维修工'}, status=400)
+    # 先删除该任务原有分配
+    RepairAssignment.objects.filter(road_record=task).delete()
+    # 批量分配
+    for uid in ids:
+        try:
+            worker = UserProfile.objects.get(pk=uid, permission=1)
+            RepairAssignment.objects.create(road_record=task, worker=worker)
+        except UserProfile.DoesNotExist:
+            continue
+    return Response({'msg': '分配成功'})
+
+@api_view(['GET'])
+def weekly_flow_time_distribution(request):
+    """
+    获取周客流量时间分布数据。
+    GET参数：
+        - date (string, 可选): 日期，格式如 '0912'，默认0912
+        - time_slots (int, 可选): 时间区间数量，默认12（每2小时一个区间）
+    返回：
+        - time_slots (list): 时间区间列表
+        - week_data (dict): 一周各天的数据
+    """
+    import pymysql
+    date = request.GET.get('date', '0912')
+    time_slots = int(request.GET.get('time_slots', 12))
+    
+    # 计算时间区间
+    slot_hours = 24 // time_slots
+    time_slots_list = []
+    for i in range(time_slots):
+        start_hour = i * slot_hours
+        end_hour = (i + 1) * slot_hours if i < time_slots - 1 else 24
+        time_slots_list.append(f"{start_hour:02d}:00-{end_hour:02d}:00")
+    
+    table_name = f'jn{date}_od_pairs'
+    
+    # 拼接日期字符串
+    month = date[:2]
+    day = date[2:]
+    date_str = f"2013-{month}-{day}"
+    
+    try:
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        
+        # 获取一周的数据（从指定日期开始的一周）
+        week_data = {}
+        week_days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        week_day_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+        
+        for day_idx, day_name in enumerate(week_days):
+            # 计算当前日期
+            current_date = datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=day_idx)
+            current_date_str = current_date.strftime("%Y-%m-%d")
+            
+            # 统计每个时间区间的订单数
+            day_data = []
+            for i in range(time_slots):
+                start_hour = i * slot_hours
+                end_hour = (i + 1) * slot_hours if i < time_slots - 1 else 24
+                
+                start_time = f"{current_date_str} {start_hour:02d}:00:00"
+                end_time = f"{current_date_str} {end_hour:02d}:00:00"
+                
+                sql = f"""
+                    SELECT COUNT(*) as count
+                    FROM {table_name}
+                    WHERE o_time >= %s AND o_time < %s
+                """
+                cursor.execute(sql, (start_time, end_time))
+                result = cursor.fetchone()
+                day_data.append(result[0] if result else 0)
+            
+            week_data[day_name] = {
+                'name': week_day_names[day_idx],
+                'data': day_data
+            }
+        
+        cursor.close()
+        conn.close()
+        
+        return Response({
+            'time_slots': time_slots_list,
+            'week_data': week_data
+        })
+        
+    except Exception as e:
+        import traceback
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+
+@api_view(['GET'])
+def od_analysis(request):
+    """
+    全面的OD对分析API。
+    统计所有数据库中表名包含'_od_pairs'的OD表，合并所有OD对数据。
+    GET参数：
+        - analysis_type (string, 可选): 分析类型，'origin'/'destination'/'both'，默认'both'
+        - time_slots (int, 可选): 时间区间数量，默认12
+    返回：
+        - analysis_type (string): 分析类型
+        - time_slots (list): 时间区间列表
+        - week_data (dict): 一周各天的数据（合并所有OD表）
+        - summary (dict): 统计摘要
+    """
+    import pymysql
+    analysis_type = request.GET.get('analysis_type', 'both')  # origin/destination/both
+    time_slots = int(request.GET.get('time_slots', 12))
+    
+    # 计算时间区间
+    slot_hours = 24 // time_slots
+    time_slots_list = []
+    for i in range(time_slots):
+        start_hour = i * slot_hours
+        if i < time_slots - 1:
+            end_hour = (i + 1) * slot_hours
+            time_slots_list.append(f"{start_hour:02d}:00-{end_hour:02d}:00")
+        else:
+            time_slots_list.append(f"{start_hour:02d}:00-23:59")
+    try:
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        # 获取所有OD对表名
+        cursor.execute("SHOW TABLES LIKE '%_od_pairs'")
+        od_tables = [row[0] for row in cursor.fetchall()]
+        week_days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        week_day_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+        week_data = {day: {'name': week_day_names[idx], 'data': [0]*time_slots, 'total': 0} for idx, day in enumerate(week_days)}
+        total_trips = 0
+        daily_totals = {day: 0 for day in week_days}
+        hourly_totals = [0] * time_slots
+        for table_name in od_tables:
+            if analysis_type == 'origin':
+                time_field = 'o_time'
+            elif analysis_type == 'destination':
+                time_field = 'd_time'
+            else:
+                time_field = 'o_time'
+            cursor.execute(f"SELECT DISTINCT DATE({time_field}) FROM {table_name}")
+            all_dates = [row[0] for row in cursor.fetchall() if row[0] is not None]
+            for date in all_dates:
+                day_idx = date.weekday()  # 0=周一, 6=周日
+                day_key = week_days[day_idx]
+                for i in range(time_slots):
+                    start_hour = i * slot_hours
+                    if i < time_slots - 1:
+                        end_hour = (i + 1) * slot_hours
+                        end_time = f"{date} {end_hour:02d}:00:00"
+                    else:
+                        end_time = f"{date} 23:59:59"
+                    start_time = f"{date} {start_hour:02d}:00:00"
+                    sql = f"SELECT COUNT(*) FROM {table_name} WHERE {time_field} >= %s AND {time_field} <= %s"
+                    cursor.execute(sql, (start_time, end_time))
+                    count = cursor.fetchone()[0]
+                    week_data[day_key]['data'][i] += count
+                    week_data[day_key]['total'] += count
+                    hourly_totals[i] += count
+                    total_trips += count
+                daily_totals[day_key] += week_data[day_key]['total']
+        summary = {
+            'total_trips': total_trips,
+            'avg_trips_per_day': total_trips // 7 if total_trips > 0 else 0,
+            'peak_hour': '',
+            'peak_day': '',
+            'analysis_type': analysis_type
+        }
+        if hourly_totals and max(hourly_totals) > 0:
+            peak_hour_idx = hourly_totals.index(max(hourly_totals))
+            summary['peak_hour'] = time_slots_list[peak_hour_idx]
+        if daily_totals and max(daily_totals.values()) > 0:
+            peak_day = max(daily_totals, key=daily_totals.get)
+            summary['peak_day'] = week_data[peak_day]['name']
+        cursor.close()
+        conn.close()
+        return Response({
+            'analysis_type': analysis_type,
+            'time_slots': time_slots_list,
+            'week_data': week_data,
+            'summary': summary
+        })
+    except Exception as e:
+        import traceback
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+
+@api_view(['GET'])
+def weather_flow_analysis(request):
+    """
+    返回每小时的天气数据和客流量数据，分析天气对客流量的影响。
+    读取web/public/static/data/jn_weather_c.csv，遍历所有OD表统计每小时订单数，按时间对齐。
+    """
+    import pymysql
+    import os
+    from django.conf import settings
+    import pandas as pd
+    # 修正路径：Django项目的上一级web/public/static/data/jn_weather_c.csv
+    weather_path = os.path.abspath(os.path.join(settings.BASE_DIR, '..', 'web', 'public', 'static', 'data', 'jn_weather_c.csv'))
+    try:
+        weather_df = pd.read_csv(weather_path)
+        weather_df['Time_new'] = pd.to_datetime(weather_df['Time_new'])
+        weather_df.set_index('Time_new', inplace=True)
+        # 2. 统计每小时客流量
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        # 获取所有OD对表名
+        cursor.execute("SHOW TABLES LIKE '%_od_pairs'")
+        od_tables = [row[0] for row in cursor.fetchall()]
+        # 构建所有小时的时间戳
+        all_times = weather_df.index.unique().sort_values()
+        flow_dict = {t: 0 for t in all_times}
+        for table_name in od_tables:
+            # 只查o_time字段
+            cursor.execute(f"SELECT o_time FROM {table_name}")
+            for row in cursor.fetchall():
+                if row[0] is not None:
+                    t = pd.to_datetime(row[0]).replace(minute=0, second=0, microsecond=0)
+                    if t in flow_dict:
+                        flow_dict[t] += 1
+        cursor.close()
+        conn.close()
+        # 合并天气和客流量
+        result = []
+        for t in all_times:
+            w = weather_df.loc[t]
+            result.append({
+                'time': t.strftime('%Y-%m-%d %H:%M'),
+                'temperature': float(w['Temperature']),
+                'humidity': float(w['Humidity']),
+                'wind_speed': float(w['Wind_Speed']),
+                'precip': float(w['Precip']),
+                'flow': int(flow_dict[t])
+            })
+        return Response(result)
+    except Exception as e:
+        # 返回空数组，保证前端不报错
+        return Response([])
+        
+@api_view(['GET'])
+def my_tasks(request):
+    username = request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    assignments = RepairAssignment.objects.filter(worker=user)
+    tasks = [a.road_record for a in assignments]
+    serializer = RoadRecordSerializer(tasks, many=True, context={'request': request})
+    return Response(serializer.data)
+
+@api_view(['POST'])
+def complete_task(request, task_id):
+    username = request.session.get('username')
+    print('【complete_task调试】session username:', username)
+    if not username:
+        print('【complete_task调试】未登录')
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+        print('【complete_task调试】user.id:', user.id)
+    except UserProfile.DoesNotExist:
+        print('【complete_task调试】用户不存在')
+        return Response({'msg': '用户不存在'}, status=404)
+    # 打印所有分配给该用户的任务id
+    assignments = RepairAssignment.objects.filter(worker=user)
+    print('【complete_task调试】user assignments:', [a.road_record_id for a in assignments])
+    print('【complete_task调试】当前上传 task_id:', task_id)
+    # 打印所有 RepairAssignment 的 worker_id, road_record_id
+    all_assignments = RepairAssignment.objects.all()
+    print('【complete_task调试】所有分配记录:')
+    for a in all_assignments:
+        print(f'  assignment.id={a.id}, worker_id={a.worker_id}, road_record_id={a.road_record_id}')
+    try:
+        assignment = RepairAssignment.objects.get(road_record_id=task_id, worker=user)
+        print('【complete_task调试】assignment found:', assignment.id)
+    except RepairAssignment.DoesNotExist:
+        print('【complete_task调试】assignment not found for user:', user.id, 'task_id:', task_id)
+        return Response({'msg': '无此任务或无权限'}, status=403)
+    files = request.FILES.getlist('file')
+    if not files:
+        print('【complete_task调试】未上传图片')
+        return Response({'msg': '请上传图片'}, status=400)
+    for file in files:
+        RepairCompletionImage.objects.create(assignment=assignment, image=file)
+    image_urls = [request.build_absolute_uri(img.image.url) for img in assignment.completion_images.all()]
+    print('【complete_task调试】上传成功，图片数:', len(image_urls))
+    return Response({'msg': '上传成功', 'image_urls': image_urls})
+
+@api_view(['POST'])
+def delete_task_image(request, image_id):
+    username = request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    try:
+        img = RepairCompletionImage.objects.get(id=image_id)
+        assignment = img.assignment
+        if assignment.worker != user:
+            return Response({'msg': '无权限'}, status=403)
+        img.image.delete(save=False)
+        img.delete()
+        image_urls = [request.build_absolute_uri(i.image.url) for i in assignment.completion_images.all()]
+        return Response({'msg': '删除成功', 'image_urls': image_urls})
+    except RepairCompletionImage.DoesNotExist:
+        return Response({'msg': '图片不存在'}, status=404)
+
+@api_view(['GET'])
+def get_task_images(request, task_id):
+    username = request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    try:
+        assignment = RepairAssignment.objects.get(road_record_id=task_id, worker=user)
+    except RepairAssignment.DoesNotExist:
+        return Response({'msg': '无此任务或无权限'}, status=403)
+    images = assignment.completion_images.all()
+    image_urls = [request.build_absolute_uri(img.image.url) for img in images]
+    image_ids = [img.id for img in images]
+    return Response({'image_urls': image_urls, 'image_ids': image_ids})
+
+@api_view(['POST'])
+def mark_finished(request, task_id):
+    username = request.session.get('username')
+    if not username:
+        return Response({'msg': '未登录'}, status=401)
+    try:
+        user = UserProfile.objects.get(username=username)
+    except UserProfile.DoesNotExist:
+        return Response({'msg': '用户不存在'}, status=404)
+    try:
+        assignment = RepairAssignment.objects.get(road_record_id=task_id, worker=user)
+    except RepairAssignment.DoesNotExist:
+        return Response({'msg': '无此任务或无权限'}, status=403)
+    assignment.status = 'finished'
+    assignment.save()
+    return Response({'msg': '任务已认证完成'})

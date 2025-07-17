@@ -52,7 +52,17 @@
           <td class="ellipsis">{{ log.ip_address || '未知' }}</td>
           <td class="ellipsis" :title="log.action">{{ log.action }}</td>
           <td>{{ formatDate(log.timestamp) }}</td>
-          <td class="ellipsis" :title="log.details">{{ log.details || '无' }}</td>
+          <td class="ellipsis" :title="log.details">
+            <span v-if="log.alert_event_video_url"
+                  class="log-detail-link"
+                  @click="playAlertVideo(log.alert_event_video_url)"
+                  style="color:#007bff;cursor:pointer;text-decoration:underline;">
+              {{ log.details }}
+            </span>
+            <span v-else>
+              {{ log.details }}
+            </span>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -76,6 +86,9 @@
         <button @click="goToPage">跳转</button>
       </span>
     </div>
+    <el-dialog v-model="showVideoDialog" title="告警视频" width="600px">
+      <video v-if="currentVideoUrl" :src="currentVideoUrl" controls style="width:100%"></video>
+    </el-dialog>
   </div>
 </template>
 
@@ -99,6 +112,8 @@ const filters = ref({
 const loading = ref(false);
 const error = ref(null);
 const jumpPage = ref(1);
+const showVideoDialog = ref(false);
+const currentVideoUrl = ref('');
 
 // 获取日志数据
 const fetchLogs = async (page = 1) => {
@@ -161,6 +176,11 @@ const formatDate = (timestamp) => {
   const d = new Date(timestamp);
   const pad = n => n < 10 ? '0' + n : n;
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
+
+const playAlertVideo = (url) => {
+  currentVideoUrl.value = url;
+  showVideoDialog.value = true;
 };
 
 onMounted(() => {
@@ -292,5 +312,41 @@ onMounted(() => {
 }
 .empty-tip {
   color: #888;
+}
+.log-detail-link {
+  color: #007bff;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.video-dialog-mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.video-dialog-box {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px 24px 16px 24px;
+  min-width: 400px;
+  max-width: 90vw;
+  max-height: 80vh;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.video-dialog-close {
+  margin-top: 16px;
+  padding: 8px 32px;
+  font-size: 1.1em;
+  border: none;
+  border-radius: 6px;
+  background: #007bff;
+  color: #fff;
+  cursor: pointer;
 }
 </style>

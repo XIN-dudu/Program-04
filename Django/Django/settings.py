@@ -54,6 +54,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # "web.middleware.ExceptionLoggingMiddleware",
 ]
 
 ROOT_URLCONF = "Django.urls"
@@ -153,8 +154,7 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
 ]
 SESSION_COOKIE_SAMESITE = None
-# 可选：设置会话安全
-SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True  
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # 关闭浏览器自动退出登录
 
 # 可选：Swagger 自定义配置 
@@ -165,3 +165,4 @@ SWAGGER_SETTINGS = {
     'JSON_EDITOR': True,  # 启用 JSON 输入框 
     'OPERATIONS_SORTER': 'alpha'  # 接口按字母排序 
 }
+SELF_BASE_URL = "http://localhost:8000" 

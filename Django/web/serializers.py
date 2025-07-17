@@ -18,10 +18,24 @@ class UserSerializer(serializers.ModelSerializer):
             'face_id': {'read_only': True}
         }
 class LogSerializer(serializers.ModelSerializer):
-    user = UserSerializer( read_only=True)
+    user = UserSerializer(read_only=True)
+    alert_event_id = serializers.SerializerMethodField()
+    alert_event_video_url = serializers.SerializerMethodField()
+
+    def get_alert_event_id(self, obj):
+        return obj.alert_event.id if obj.alert_event else None
+
+    def get_alert_event_video_url(self, obj):
+        if obj.alert_event and obj.alert_event.video:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.alert_event.video.url)
+            return obj.alert_event.video.url
+        return None
+
     class Meta:
         model = SystemLog
-        fields = ['id','level','user', 'ip_address', 'action', 'details', 'timestamp']
+        fields = ['id','level','user', 'ip_address', 'action', 'details', 'timestamp', 'alert_event_id', 'alert_event_video_url']
         read_only_fields = ['id', 'timestamp']
 
     # def create(self, validated_data):

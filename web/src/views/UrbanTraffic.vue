@@ -12,14 +12,6 @@
           <h3>上客热点区域</h3>
           <p>分析并展示上客热点区域分布</p>
         </div>
-        <div class="feature-card" @click="goTo('weekflow')">
-          <h3>周客流量分布</h3>
-          <p>展示一周内的客流量变化趋势</p>
-        </div>
-        <div class="feature-card" @click="goTo('road')">
-          <h3>路程与道路数据可视化</h3>
-          <p>分析路程类型与道路速度等数据</p>
-        </div>
         <div class="feature-card" @click="goTo('shandongmap')">
           <h3>山东省地图与人口分布</h3>
           <p>可视化展示山东省地图及各地市人口分布</p>

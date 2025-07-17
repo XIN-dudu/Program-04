@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .views import liveness_and_face_verify
 
 urlpatterns = [
     path('login', views.login),
@@ -9,7 +10,7 @@ urlpatterns = [
     path('email_login', views.email_login),#邮箱登录
     path('face_recognition', views.face_recognition),
     path('liveness_detection', views.liveness_detection),
-    path('liveness_check', views.liveness_check),
+    path('liveness_check/', views.liveness_check),
     path('click_captcha/', views.click_captcha),
     path('click_captcha/verify/', views.click_captcha_verify),
     path('update_profile/', views.update_profile),
@@ -23,4 +24,6 @@ urlpatterns = [
     path('logs/',views.log_list),
     path('user/profile/', views.current_user_profile),
     path('avatar/<str:username>/', views.get_avatar),
+    path('liveness_and_face_verify/', liveness_and_face_verify),
+    path('cars/', views.car_list),
 ]

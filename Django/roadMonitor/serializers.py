@@ -4,27 +4,67 @@ from requests import request
 from rest_framework import serializers
 from .models import roadRecord
 
-class RoadRecordSerializer(serializers.ModelSerializer):
-    # 显示可读标签的字段（只读）
-    #disease_type_label = serializers.CharField(source='get_disease_type_display', read_only=True)
-    #severity_label = serializers.CharField(source='get_severity_display', read_only=True)
+
+from rest_framework import serializers
+
+class RoadSerializer(serializers.ModelSerializer):
     
-    # 自动处理时间字段
-    #detection_time = serializers.DateTimeField(read_only=True)
+    # 处理description字段
+    description = serializers.JSONField()
 
     class Meta:
         model = roadRecord
-        fields = ['road_id', 'disease_type', 'severity']
+        fields = ['road_id', 'description']
+        
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # 安全访问 description 字段
+        desc = data.get('description')
+        if isinstance(desc, list):
+            for item in desc:
+                # 将数字转换为文字描述
+                severity_mapping = {v[0]: v[1] for v in roadRecord.SEVERITY_CHOICES}
+                disease_type_mapping = {v[0]: v[1] for v in roadRecord.DISEASE_TYPE_CHOICES}
+                item['severity'] = severity_mapping.get(item.get('severity'), 'UNKNOWN')
+                item['disease_type'] = disease_type_mapping.get(item.get('disease_type'), 'UNKNOWN')
+                url = os.path.join(settings.MEDIA_URL, 'road', item['url'])
+                item['url'] = 'http://localhost:8000' + url
+                
+        return data
+
+class RoadRecordSerializer(serializers.ModelSerializer):
+    assigned_person_ids = serializers.SerializerMethodField()
+    assignment_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = roadRecord
+        fields = ['disease_id', 'road_id', 'disease_type', 'severity', 'assigned_person_ids', 'assignment_status', 'description']
+
         extra_kwargs = {
             'road_id': {'required': True, 'min_value': 1},
             'disease_type': {'required': True},
             'severity': {'required': True},
             'path': {'required': True, 'max_length': 255},
         }
-    # def get_url(self, obj):
-    #     # 假设你的文件存储在MEDIA_ROOT
-    #     url = os.path.join(settings.MEDIA_URL, 'road', 'results', obj.path)
-    #     return url
+
+    def get_assigned_person_ids(self, obj):
+        return list(obj.assigned_workers.values_list('id', flat=True))
+
+    def get_assignment_status(self, obj):
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'session'):
+            return None
+        username = request.session.get('username')
+        if not username:
+            return None
+        from web.models import UserProfile
+        from .models import RepairAssignment
+        try:
+            user = UserProfile.objects.get(username=username)
+            assignment = RepairAssignment.objects.get(road_record=obj, worker=user)
+            return assignment.status
+        except Exception:
+            return None
 
     def validate_length(self, value):
         """验证裂缝长度必须为正数"""
@@ -38,16 +78,23 @@ class RoadRecordSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("病害面积必须大于0")
         return value
 
+
     def to_representation(self, instance):
         """自定义序列化输出格式"""
         data = super().to_representation(instance)
         
-        # 替换数值为可读标签
-        data['disease_type'] = instance.get_disease_type_display()
-        data['severity'] = instance.get_severity_display()
-        url = os.path.join(settings.MEDIA_URL, 'road', 'results', instance.path)
-        # 添加额外信息
         data['detection_date'] = instance.detection_time.strftime("%Y-%m-%d")
-        data['url'] = 'http://localhost:8000' + url
-        
+
+        # 安全访问 description 字段
+        desc = data.get('description')
+        if isinstance(desc, list):
+            for item in desc:
+                # 将数字转换为文字描述
+                severity_mapping = {v[0]: v[1] for v in roadRecord.SEVERITY_CHOICES}
+                disease_type_mapping = {v[0]: v[1] for v in roadRecord.DISEASE_TYPE_CHOICES}
+                item['severity'] = severity_mapping.get(item.get('severity'), 'UNKNOWN')
+                item['disease_type'] = disease_type_mapping.get(item.get('disease_type'), 'UNKNOWN')
+                url = os.path.join(settings.MEDIA_URL, 'road', item['url'])
+                item['url'] = 'http://localhost:8000' + url
+                
         return data
