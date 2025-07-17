@@ -98,19 +98,25 @@ class Command(BaseCommand):
             }
             for idx, car_id in enumerate(car_ids, 1):
                 self.stdout.write(f"正在处理第 {idx}/{len(car_ids)} 辆车：{car_id}")
-                cursor.execute('SELECT UTC, LAT, LON, status, SPEED FROM jn0912_baidu_coords WHERE UTC >= %s AND UTC < %s AND status=1 AND COMMADDR=%s ORDER BY UTC', (f'{target_date} 00:00:00', f'{target_date} 23:59:59', car_id))
+                cursor.execute('SELECT UTC, LAT, LON, status, SPEED FROM jn0912_baidu_coords WHERE UTC >= %s AND UTC < %s AND COMMADDR=%s ORDER BY UTC', (f'{target_date} 00:00:00', f'{target_date} 23:59:59', car_id))
                 rows = cursor.fetchall()
                 trips = []
                 current_trip = []
                 for row in rows:
                     utc, lat, lon, status, speed = row
-                    current_trip.append({
+                    point = {
                         'utc': utc,
                         'lat': float(lat),
                         'lon': float(lon),
                         'status': status,
                         'speed': speed
-                    })
+                    }
+                    if status == 1:
+                        current_trip.append(point)
+                    else:
+                        if len(current_trip) >= 2:
+                            trips.append(current_trip)
+                        current_trip = []
                 if len(current_trip) >= 2:
                     trips.append(current_trip)
                 self.stdout.write(f"  车辆 {car_id} 共 {len(trips)} 单...")
@@ -121,11 +127,14 @@ class Command(BaseCommand):
                         start_point['lat'], start_point['lon'],
                         end_point['lat'], end_point['lon']
                     )
+                    duration = (end_point['utc'] - start_point['utc']).total_seconds() / 60
+                    # 过滤异常订单
+                    if distance <= 0.5 or duration <= 2:
+                        continue
                     trip_type = self.classify_trip_distance(distance)
                     daily_stats[f'{trip_type}_count'] += 1
                     daily_stats[f'{trip_type}_distances'].append(distance)
                     daily_stats['all_distances'].append(distance)
-                    duration = (end_point['utc'] - start_point['utc']).total_seconds() / 60
                     avg_speed = distance / (duration / 60) if duration > 0 else 0
                     TripDetailStat.objects.create(
                         license_plate=car_id,
@@ -147,20 +156,20 @@ class Command(BaseCommand):
             avg_medium = sum(daily_stats['medium_distances']) / len(daily_stats['medium_distances']) if daily_stats['medium_distances'] else 0
             avg_long = sum(daily_stats['long_distances']) / len(daily_stats['long_distances']) if daily_stats['long_distances'] else 0
             avg_total = sum(daily_stats['all_distances']) / len(daily_stats['all_distances']) if daily_stats['all_distances'] else 0
-            self.stdout.write("正在写入汇总表 TripDistanceStat ...")
-            TripDistanceStat.objects.update_or_create(
-                date=target_datetime.date(),
-                defaults={
-                    'short_count': daily_stats['short_count'],
-                    'medium_count': daily_stats['medium_count'],
-                    'long_count': daily_stats['long_count'],
-                    'avg_short_distance': round(avg_short, 2),
-                    'avg_medium_distance': round(avg_medium, 2),
-                    'avg_long_distance': round(avg_long, 2),
-                    'avg_total_distance': round(avg_total, 2),
-                }
-            )
-            self.stdout.write("TripDistanceStat 汇总写入完成！")
+            # self.stdout.write("正在写入汇总表 TripDistanceStat ...")
+            # TripDistanceStat.objects.update_or_create(
+            #     date=target_datetime.date(),
+            #     defaults={
+            #         'short_count': daily_stats['short_count'],
+            #         'medium_count': daily_stats['medium_count'],
+            #         'long_count': daily_stats['long_count'],
+            #         'avg_short_distance': round(avg_short, 2),
+            #         'avg_medium_distance': round(avg_medium, 2),
+            #         'avg_long_distance': round(avg_long, 2),
+            #         'avg_total_distance': round(avg_total, 2),
+            #     }
+            # )
+            # self.stdout.write("TripDistanceStat 汇总写入完成！")
             cursor.close()
             conn.close()
             total_trips = daily_stats['short_count'] + daily_stats['medium_count'] + daily_stats['long_count']

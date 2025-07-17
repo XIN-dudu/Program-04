@@ -20,6 +20,7 @@ from sklearn.cluster import DBSCAN
 import numpy as np
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
+from collections import defaultdict
 
 from .yolo_model import run_detection_in_memory
 
@@ -28,6 +29,7 @@ from .serializers import RoadRecordSerializer, RoadSerializer
 
 from .models import roadRecord, RepairAssignment, RepairCompletionImage
 from web.models import UserProfile
+from .models import TripDetailStat
 from web.views import create_log
 
 pixel_to_meter = 0.003
@@ -1357,51 +1359,45 @@ def occupied_taxi_count_preprocessed(request):
     """
     使用预处理数据的载客出租车数量统计API。
     从preprocessed_data表中读取数据，大大提高查询速度。
+    支持通过GET参数date动态查询。
     """
     from roadMonitor.models import PreprocessedData
     from datetime import datetime
-    
     try:
+        # 获取前端传入的日期参数
+        date_str = request.GET.get('date', '2013-09-12')
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
         # 从预处理数据表中获取载客出租车数据
         occupied_data = PreprocessedData.objects.filter(
             data_type='occupied_taxi',
-            date='2013-09-12'  # 可以根据需要修改日期
+            date=date_obj
         ).order_by('hour')
-        
         time_slots_list = []
         occupied_counts = []
-        
-        # 生成时间区间和对应的载客数量
         for i in range(12):  # 12个2小时区间
             start_hour = i * 2
             end_hour = start_hour + 2
-            
             if i == 0:
                 time_slots_list.append(f"当前-{end_hour:02d}:00")
             else:
                 time_slots_list.append(f"{start_hour:02d}:00-{end_hour:02d}:00")
-            
-            # 统计该时间区间的载客车辆数
             count = 0
             for hour in range(start_hour, end_hour):
                 record = occupied_data.filter(hour=hour).first()
                 if record:
                     count += record.occupied_taxi_count
             occupied_counts.append(count)
-        
         total_occupied = sum(occupied_counts)
         avg_occupied = total_occupied / len(occupied_counts) if occupied_counts else 0
         peak_hour = time_slots_list[occupied_counts.index(max(occupied_counts))] if occupied_counts else ""
-        
         return Response({
             'time_slots': time_slots_list,
             'occupied_counts': occupied_counts,
             'total_occupied': total_occupied,
             'avg_occupied': round(avg_occupied, 2),
             'peak_hour': peak_hour,
-            'current_time': '2013-09-12 12:00:00'
+            'current_time': date_obj.strftime('%Y-%m-%d 12:00:00')
         })
-        
     except Exception as e:
         import traceback
         print(f"预处理载客出租车分析错误: {str(e)}")
@@ -1463,13 +1459,16 @@ def trip_distance_analysis(request):
                 'avg_long_distance': stat.avg_long_distance or 0,
                 'avg_total_distance': stat.avg_total_distance or 0
             })
-            
             # 累计总数
             total_summary['short_count'] += stat.short_count
             total_summary['medium_count'] += stat.medium_count
             total_summary['long_count'] += stat.long_count
             total_summary['total_count'] += stat.total_count
-        
+            # 累计平均距离
+            total_summary['avg_short_distance'] += stat.avg_short_distance or 0
+            total_summary['avg_medium_distance'] += stat.avg_medium_distance or 0
+            total_summary['avg_long_distance'] += stat.avg_long_distance or 0
+            total_summary['avg_total_distance'] += stat.avg_total_distance or 0
         # 计算总体平均距离
         days_count = len(data)
         if days_count > 0:
@@ -1496,3 +1495,71 @@ def trip_distance_analysis(request):
         
     except Exception as e:
         return Response({'error': f'获取路程分析数据失败: {str(e)}'}, status=500)
+
+@api_view(['GET'])
+def road_speed_analysis(request):
+    """
+    道路速度分析API，返回聚合后路段的平均速度和订单数（仅中短途订单）。
+    GET参数：
+        - date (string, 必选): 日期，格式如 '2013-09-12'
+    返回：
+        - [
+            {"path": [{"lng": ..., "lat": ...}, ...], "avg_speed": ..., "count": ...},
+            ...
+          ]
+    """
+    def round_coord(coord, precision=3):
+        return round(coord, precision)
+    date = request.GET.get('date', '2013-09-12')
+    trips = TripDetailStat.objects.filter(date=date, trip_type__in=['short', 'medium'])
+    group_dict = defaultdict(list)
+    for trip in trips:
+        start = (round_coord(trip.start_lng), round_coord(trip.start_lat))
+        end = (round_coord(trip.end_lng), round_coord(trip.end_lat))
+        key = (start, end)
+        group_dict[key].append(trip.avg_speed)
+    result = []
+    for (start, end), speeds in group_dict.items():
+        avg_speed = sum(speeds) / len(speeds)
+        result.append({
+            "path": [
+                {"lng": start[0], "lat": start[1]},
+                {"lng": end[0], "lat": end[1]}
+            ],
+            "avg_speed": round(avg_speed, 2),
+            "count": len(speeds)
+        })
+    return Response(result)
+
+@api_view(['GET'])
+def road_speed_hourly(request):
+    """
+    返回某天24小时每小时的平均速度（km/h），用于前端折线图。
+    GET参数：
+        - date (string, 可选): 日期，格式如 '2013-09-12'，默认2013-09-12
+    返回：
+        - [ {hour: 0, avg_speed: 23.5}, ... ]
+    """
+    from datetime import datetime
+    date_str = request.GET.get('date', '2013-09-12')
+    try:
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except Exception:
+        return Response({'error': '日期格式错误，应为YYYY-MM-DD'}, status=400)
+    # 查询该天所有明细
+    trips = TripDetailStat.objects.filter(date=date_obj)
+    hour_speed = defaultdict(list)
+    for trip in trips:
+        # 只统计合理订单
+        if trip.distance > 0.5 and trip.duration > 2 and 0 < trip.avg_speed < 40:
+            start_hour = trip.start_time.hour
+            hour_speed[start_hour].append(trip.avg_speed)
+    result = []
+    for h in range(24):
+        speeds = hour_speed[h]
+        if speeds:
+            avg = round(sum(speeds) / len(speeds), 2)
+        else:
+            avg = None
+        result.append({'hour': h, 'avg_speed': avg})
+    return Response(result)

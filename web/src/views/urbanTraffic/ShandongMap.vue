@@ -79,14 +79,15 @@
       </transition-group>
     </div>
     <div class="right-panel">
+      <!-- 仅在载客出租车数量视图显示日期选择器 -->
+      <div v-if="currentView === 'occupied-taxi'" style="margin-bottom: 16px;">
+        <label>选择日期：</label>
+        <input type="date" v-model="occupiedDate" min="2013-09-12" max="2013-09-18" @change="fetchOccupiedTaxiData" />
+      </div>
       <div v-show="currentView !== 'road-speed'" ref="chart" class="map-chart"></div>
       <div v-show="currentView === 'road-speed'">
-        <div id="baiduMapContainer" style="width: 100%; height: 600px;"></div>
-        <div style="margin-top: 10px;">
-          <span style="color: green;">● 速度快</span>
-          <span style="color: orange; margin-left: 20px;">● 速度中</span>
-          <span style="color: red; margin-left: 20px;">● 速度慢</span>
-        </div>
+        <div ref="roadSpeedChart" style="width: 100%; height: 500px;"></div>
+        <!-- 速度说明小圆点已删除 -->
       </div>
       <div v-if="loading && currentView === 'occupied-taxi'" class="loading-overlay">
         <div class="loading-spinner"></div>
@@ -152,6 +153,8 @@ export default {
       weatherLoading: false,
       tripDistanceData: {},
       tripDistanceLoading: false,
+      roadSpeedChart: null, // 新增：道路速度图表实例
+      occupiedDate: '2013-09-12', // 载客出租车数量当前选中日期
     };
   },
   mounted() {
@@ -354,33 +357,16 @@ export default {
     async showOccupiedTaxiCount() {
       this.currentView = 'occupied-taxi';
       this.showDataSource = true;
-      this.loading = false;
+      this.loading = true;
       this.weekFlowLoading = false;
       this.weatherLoading = false;
-      await this.renderOccupiedTaxiChart();
+      await this.fetchOccupiedTaxiData();
     },
          async renderOccupiedTaxiChart() {
        if (this.chart) this.chart.clear();
-       this.loading = true; // 开始加载
-       try {
-         // 使用预处理数据的API接口
-         const response = await fetch('/api/occupied_taxi_count_preprocessed/');
-         const data = await response.json();
-         if (data.error) {
-           console.error('获取载客出租车数据失败:', data.error);
-           this.useSimulatedOccupiedData();
-           return;
-         }
-         this.occupiedTaxiData = data;
-       } catch (error) {
-         console.error('API请求失败:', error);
-         this.useSimulatedOccupiedData();
-       } finally {
-         this.loading = false; // 结束加载
-       }
-       
+       // 只渲染，不再请求API，数据由fetchOccupiedTaxiData负责
        if (!this.occupiedTaxiData.time_slots || !this.occupiedTaxiData.occupied_counts) {
-         this.useSimulatedOccupiedData();
+         return;
        }
        
        const option = {
@@ -492,17 +478,14 @@ export default {
     async renderTripDistanceChart() {
       if (this.chart) this.chart.clear();
       this.tripDistanceLoading = true;
-      
       try {
         const response = await fetch('/api/trip_distance_analysis/?start_date=2013-09-12&end_date=2013-09-12');
         const data = await response.json();
-        
         if (data.error) {
           console.error('获取路程分析数据失败:', data.error);
           this.useSimulatedTripDistanceData();
           return;
         }
-        
         this.tripDistanceData = data;
       } catch (error) {
         console.error('API请求失败:', error);
@@ -510,139 +493,69 @@ export default {
       } finally {
         this.tripDistanceLoading = false;
       }
-      
-      if (!this.tripDistanceData.daily_data || this.tripDistanceData.daily_data.length === 0) {
+      if (!this.tripDistanceData.summary) {
         this.useSimulatedTripDistanceData();
       }
-      
-      const dailyData = this.tripDistanceData.daily_data;
-      const dates = dailyData.map(d => d.date);
-      const shortData = dailyData.map(d => d.short_count);
-      const mediumData = dailyData.map(d => d.medium_count);
-      const longData = dailyData.map(d => d.long_count);
-      
+      // 饼状图数据
+      const summary = this.tripDistanceData.summary;
+      const pieData = [
+        { value: summary.short_ratio, name: '短途(<4km)' },
+        { value: summary.medium_ratio, name: '中途(4-8km)' },
+        { value: summary.long_ratio, name: '长途(>8km)' }
+      ];
       const option = {
-        title: { 
-          text: '路程分析 - 短途/中途/长途占比', 
-          left: 'center', 
+        title: {
+          text: '路程分析 - 距离占比',
+          left: 'center',
           textStyle: { fontSize: 18, fontWeight: 'bold' },
-          subtext: '2013年9月12日行程距离分布',
+          subtext: '2013年9月12日行程距离占比',
           subtextStyle: { fontSize: 12, color: '#666' }
         },
         tooltip: {
-          trigger: 'axis',
-          axisPointer: { type: 'shadow' },
-          formatter: function(params) {
-            let result = `${params[0].axisValue}<br/>`;
-            let total = 0;
-            params.forEach(param => { 
-              total += param.value;
-              result += `${param.marker}${param.seriesName}: <b>${param.value}</b> 次<br/>`; 
-            });
-            result += `<br/>总计: <b>${total}</b> 次`;
-            return result;
-          }
+          trigger: 'item',
+          formatter: '{b}: {d}% ({c})'
         },
-        legend: { 
-          data: ['短途(<4km)', '中途(4-8km)', '长途(>8km)'], 
-          top: 40, 
-          left: 'center' 
-        },
-        grid: { 
-          left: '5%', 
-          right: '5%', 
-          bottom: '15%', 
-          top: '20%', 
-          containLabel: true 
-        },
-        xAxis: {
-          type: 'category',
-          data: dates,
-          name: '日期',
-          nameLocation: 'end',
-          nameGap: 10,
-          axisLabel: { 
-            rotate: 45,
-            fontSize: 10
-          },
-          axisTick: { alignWithLabel: true }
-        },
-        yAxis: {
-          type: 'value',
-          name: '行程数量',
-          nameLocation: 'start',
-          nameGap: 10,
-          nameTextStyle: { align: 'left' },
-          min: 0,
-          splitLine: { show: true }
+        legend: {
+          orient: 'vertical',
+          left: 'left',
+          data: ['短途(<4km)', '中途(4-8km)', '长途(>8km)']
         },
         series: [
           {
-            name: '短途(<4km)',
-            type: 'bar',
-            stack: 'total',
-            data: shortData,
-            itemStyle: { color: '#52c41a' },
-            emphasis: { focus: 'series' }
-          },
-          {
-            name: '中途(4-8km)',
-            type: 'bar',
-            stack: 'total',
-            data: mediumData,
-            itemStyle: { color: '#faad14' },
-            emphasis: { focus: 'series' }
-          },
-          {
-            name: '长途(>8km)',
-            type: 'bar',
-            stack: 'total',
-            data: longData,
-            itemStyle: { color: '#f5222d' },
-            emphasis: { focus: 'series' }
+            name: '路程类型',
+            type: 'pie',
+            radius: '60%',
+            center: ['50%', '60%'],
+            data: pieData,
+            emphasis: {
+              itemStyle: {
+                shadowBlur: 10,
+                shadowOffsetX: 0,
+                shadowColor: 'rgba(0, 0, 0, 0.5)'
+              }
+            },
+            label: {
+              formatter: '{b}: {d}% ({c})'
+            }
           }
         ]
       };
-      
       this.chart.setOption(option, true);
     },
     useSimulatedTripDistanceData() {
-      // 生成模拟数据
       this.tripDistanceData = {
-        daily_data: [
-          {
-            date: '2013-09-12',
-            short_count: 1250,
-            medium_count: 890,
-            long_count: 360,
-            total_count: 2500,
-            short_ratio: 50.0,
-            medium_ratio: 35.6,
-            long_ratio: 14.4,
-            avg_short_distance: 2.5,
-            avg_medium_distance: 6.2,
-            avg_long_distance: 12.8,
-            avg_total_distance: 5.8
-          }
-        ],
         summary: {
-          short_count: 1250,
-          medium_count: 890,
-          long_count: 360,
-          total_count: 2500,
-          short_ratio: 50.0,
-          medium_ratio: 35.6,
-          long_ratio: 14.4,
-          avg_short_distance: 2.5,
-          avg_medium_distance: 6.2,
-          avg_long_distance: 12.8,
-          avg_total_distance: 5.8
+          total_count: 240,
+          short_ratio: 40.5,
+          medium_ratio: 35.2,
+          long_ratio: 24.3,
+          avg_total_distance: 5.6
         },
-        date_range: {
-          start_date: '2013-09-12',
-          end_date: '2013-09-12',
-          days_count: 1
-        }
+        daily_data: [
+          { date: '2013-09-12', short_count: 100, medium_count: 80, long_count: 60 },
+          { date: '2013-09-13', short_count: 110, medium_count: 70, long_count: 60 },
+          { date: '2013-09-14', short_count: 90, medium_count: 85, long_count: 65 }
+        ]
       };
     },
     async renderWeatherFlowChart() {
@@ -676,93 +589,105 @@ export default {
           formatter: params => {
             let t = params[0].axisValue;
             let html = `<b>${t}</b><br/>`;
-            params.forEach(p => { html += `${p.marker}${p.seriesName}: <b>${p.value}</b><br/>`; });
+            params.forEach(p => { html += `${p.marker}${p.seriesName}: <b>${p.value}</b> ${p.seriesName==='温度'?'°C':p.seriesName==='湿度'?'%':p.seriesName==='风速'?'m/s':''}<br/>`; });
             return html;
           }
         },
         legend: { data: ['客流量', '温度', '湿度', '风速'], top: 40, left: 'center' },
-        grid: { left: '5%', right: '8%', bottom: '10%', top: 80, containLabel: true },
+        grid: { left: '5%', right: '12%', bottom: '10%', top: 80, containLabel: true },
         xAxis: { type: 'category', data: times, axisLabel: { rotate: 45 } },
         yAxis: [
           { type: 'value', name: '客流量', position: 'left', min: 0, axisLine: { show: true }, axisLabel: { color: '#1890ff' } },
-          { type: 'value', name: '温度(°C)', position: 'right', offset: 0, axisLine: { show: true }, axisLabel: { color: '#faad14' } }
+          { type: 'value', name: '温度(°C)', position: 'right', offset: 0, axisLine: { show: true }, axisLabel: { color: '#faad14' } },
+          { type: 'value', name: '湿度(%)', position: 'right', offset: 60, axisLine: { show: true }, axisLabel: { color: '#52c41a' } },
+          { type: 'value', name: '风速(m/s)', position: 'right', offset: 120, axisLine: { show: true }, axisLabel: { color: '#722ed1' } }
         ],
-
         series: [
           { name: '客流量', type: 'line', yAxisIndex: 0, data: flows, smooth: true, lineStyle: { color: '#1890ff' }, emphasis: { focus: 'series' } },
           { name: '温度', type: 'line', yAxisIndex: 1, data: temps, smooth: true, lineStyle: { color: '#faad14' }, emphasis: { focus: 'series' } },
-          { name: '湿度', type: 'line', yAxisIndex: 1, data: hums, smooth: true, lineStyle: { color: '#52c41a' }, emphasis: { focus: 'series' } },
-          { name: '风速', type: 'line', yAxisIndex: 1, data: winds, smooth: true, lineStyle: { color: '#722ed1' }, emphasis: { focus: 'series' } }
+          { name: '湿度', type: 'line', yAxisIndex: 2, data: hums, smooth: true, lineStyle: { color: '#52c41a' }, emphasis: { focus: 'series' } },
+          { name: '风速', type: 'line', yAxisIndex: 3, data: winds, smooth: true, lineStyle: { color: '#722ed1' }, emphasis: { focus: 'series' } }
         ]
       };
       this.weatherFlowChart.setOption(option, true);
     },
-    showRoadSpeed() {
+    async showRoadSpeed() {
       this.currentView = 'road-speed';
       this.showDataSource = false;
-      this.$nextTick(() => {
-        this.initBaiduMap();
+      this.loading = true;
+      this.$nextTick(async () => {
+        let speedData = [];
+        try {
+          // 只请求后端接口
+          const res = await fetch('/api/road_speed_hourly/');
+          speedData = await res.json();
+        } catch (e) {
+          speedData = [];
+        }
+        this.loading = false;
+        this.renderRoadSpeedHourLineChart(speedData);
       });
     },
-    initBaiduMap() {
-      // 防止重复加载
-      if (window.BMap && document.getElementById('baiduMapContainer')) {
-        this.renderBaiduRoadSpeed();
+    renderRoadSpeedHourLineChart(speedData) {
+      if (!this.roadSpeedChart) {
+        this.roadSpeedChart = echarts.init(this.$refs.roadSpeedChart);
+      } else {
+        this.roadSpeedChart.clear();
+      }
+      if (!Array.isArray(speedData) || speedData.length === 0) {
+        this.roadSpeedChart.setOption({
+          title: { text: '一天内不同时间段道路平均速度', left: 'center', textStyle: { fontSize: 18, fontWeight: 'bold' } },
+          xAxis: { type: 'category', data: [] },
+          yAxis: { type: 'value', name: '平均速度(km/h)' },
+          series: []
+        });
         return;
       }
-      // 动态加载百度地图API
-      const AK = 'w9o8GAGD1jG6G8G1G8GAGD1jG6G8G1G8'; // 可替换为你自己的AK
-      if (!window.BMap) {
-        const script = document.createElement('script');
-        script.src = `https://api.map.baidu.com/api?v=3.0&ak=${AK}&callback=onBMapCallback`;
-        document.body.appendChild(script);
-        window.onBMapCallback = this.renderBaiduRoadSpeed;
-      } else {
-        this.renderBaiduRoadSpeed();
-      }
-    },
-    renderBaiduRoadSpeed() {
-      const map = new window.BMap.Map('baiduMapContainer');
-      map.centerAndZoom(new window.BMap.Point(117.000923, 36.675807), 12);
-      map.enableScrollWheelZoom(true);
-
-      // mock数据：三条路段，不同速度
-      const roadData = [
-        {
-          path: [
-            {lng: 117.000923, lat: 36.675807},
-            {lng: 117.010923, lat: 36.675807}
-          ],
-          speed: 45
+      const hours = speedData.map(d => `${d.hour}:00`);
+      const speeds = speedData.map(d => d.avg_speed);
+      const option = {
+        title: { text: '一天内不同时间段道路平均速度', left: 'center', textStyle: { fontSize: 18, fontWeight: 'bold' } },
+        tooltip: {
+          trigger: 'axis', axisPointer: { type: 'cross' },
+          formatter: params => {
+            let t = params[0].axisValue;
+            let html = `<b>${t}</b><br/>`;
+            params.forEach(p => { html += `${p.marker}${p.seriesName}: <b>${p.value} km/h</b><br/>`; });
+            return html;
+          }
         },
-        {
-          path: [
-            {lng: 117.010923, lat: 36.675807},
-            {lng: 117.020923, lat: 36.680807}
+        grid: { left: '5%', right: '8%', bottom: '28%', top: '22%', containLabel: true },
+        xAxis: { type: 'category', data: hours, axisLabel: { rotate: 0 } },
+        yAxis: [{
+          type: 'value', name: '平均速度(km/h)', position: 'left', min: 0, axisLine: { show: true }, axisLabel: { color: '#1890ff' }
+        }],
+        series: [
+          { name: '平均速度', type: 'line', yAxisIndex: 0, data: speeds, smooth: true, lineStyle: { color: '#1890ff', width: 3 }, emphasis: { focus: 'series' }, symbol: 'none' }
+        ],
+        markLine: {
+          symbol: 'none',
+          data: [
+            { yAxis: 20, name: '拥堵阈值' }
           ],
-          speed: 25
-        },
-        {
-          path: [
-            {lng: 117.020923, lat: 36.680807},
-            {lng: 117.030923, lat: 36.685807}
-          ],
-          speed: 10
+          lineStyle: { color: 'red', type: 'dashed' },
+          label: { formatter: '拥堵阈值 20km/h', color: 'red', fontWeight: 'bold' }
         }
-      ];
-
-      roadData.forEach(road => {
-        let color = 'green';
-        if (road.speed < 15) color = 'red';
-        else if (road.speed < 35) color = 'orange';
-        const points = road.path.map(p => new window.BMap.Point(p.lng, p.lat));
-        const polyline = new window.BMap.Polyline(points, {
-          strokeColor: color,
-          strokeWeight: 8,
-          strokeOpacity: 0.8
-        });
-        map.addOverlay(polyline);
-      });
+      };
+      this.roadSpeedChart.setOption(option, true);
+    },
+    async fetchOccupiedTaxiData() {
+      if (this.currentView !== 'occupied-taxi') return;
+      this.loading = true;
+      try {
+        const res = await fetch(`/api/occupied_taxi_count_preprocessed/?date=${this.occupiedDate}`);
+        const data = await res.json();
+        this.occupiedTaxiData = data;
+        this.renderOccupiedTaxiChart();
+      } catch (e) {
+        this.occupiedTaxiData = {};
+      } finally {
+        this.loading = false;
+      }
     },
   }
 };
