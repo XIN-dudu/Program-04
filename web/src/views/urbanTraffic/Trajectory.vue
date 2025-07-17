@@ -32,12 +32,13 @@
           <div class="car-select-wrapper">
             <input
               v-model="carIdInput"
-              @input="onCarInput"
-              @focus="onCarFocus"
               @blur="onCarBlur"
               placeholder="请输入或选择车牌号"
               autocomplete="off"
             />
+            <button class="dropdown-btn" @mousedown.prevent="onDropdownBtnClick">
+              ▼
+            </button>
             <ul
               v-if="showCarDropdown && carOptions.length"
               class="car-dropdown"
@@ -150,25 +151,15 @@ export default {
         showMsg('指定日期范围内没有记录！');
       }
     },
-    onCarFocus() {
+    onDropdownBtnClick() {
       this.showCarDropdown = true;
-      if (!this.carIdInput) {
-        this.carPage = 1;
-        this.fetchCarOptions();
-      }
-    },
-    onCarInput(e) {
-      this.carIdInput = e.target.value;
       this.carPage = 1;
       this.fetchCarOptions();
-      this.showCarDropdown = true;
-      this.carId = '';
     },
     onCarBlur() {
       setTimeout(() => {
         this.showCarDropdown = false;
         if (this.carIdInput && !this.carId) {
-          // 输入但未选中，自动填入第一个匹配项
           if (this.carOptions.length > 0) {
             this.selectCar(this.carOptions[0]);
           }
@@ -184,15 +175,10 @@ export default {
       if (!loadMore) this.carOptions = [];
       this.carLoading = true;
       const page = loadMore ? this.carPage + 1 : 1;
-      // 只查前缀
-      const search = this.carIdInput || '';
-      const res = await fetch(`/api/cars/?search=${encodeURIComponent(search)}&page=${page}&page_size=${this.carPageSize}`);
+      // 不传search参数，始终查全部
+      const res = await fetch(`/api/cars/?page=${page}&page_size=${this.carPageSize}`);
       const data = await res.json();
       let results = data.results || [];
-      // 前端兜底前缀过滤
-      if (search) {
-        results = results.filter(x => x.startsWith(search));
-      }
       if (loadMore) {
         this.carOptions = this.carOptions.concat(results);
         this.carPage = page;
@@ -475,6 +461,21 @@ export default {
   margin-top: 6px;
   z-index: 10;
 }
+.dropdown-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%) translateY(-10px);
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  z-index: 21;
+  line-height: 1;
+  height: 18px;
+  width: 18px;
+}
 .car-select-wrapper {
   position: relative;
   width: 100%;
@@ -482,6 +483,7 @@ export default {
 .car-select-wrapper input {
   width: 100%;
   box-sizing: border-box;
+  padding-right: 24px;
 }
 .car-dropdown {
   position: absolute;
