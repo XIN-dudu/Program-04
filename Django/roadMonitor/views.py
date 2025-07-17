@@ -718,6 +718,7 @@ def assign_task(request, task_id):
             RepairAssignment.objects.create(road_record=task, worker=worker)
         except UserProfile.DoesNotExist:
             continue
+    create_log(request,request.user if hasattr(request, 'user') else None,'info', '维修任务分配', f'任务ID: {task_id}, 分配给: {ids}')
     return Response({'msg': '分配成功'})
 
 @api_view(['GET'])

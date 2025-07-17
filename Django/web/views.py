@@ -472,6 +472,7 @@ def email_login(request):
         if not user:
             return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
         request.session['username'] = user.username  # 邮箱登录成功写入session
+        create_log(request,user,'info', '邮箱登录成功', f'用户名: {user.username}')
         return Response({'msg': '登录成功', 'name': user.username, 'permission': user.permission}, status=status.HTTP_200_OK)
     except UserProfile.DoesNotExist:
         return Response({'msg': '用户不存在'}, status=status.HTTP_400_BAD_REQUEST)
@@ -849,6 +850,7 @@ def update_profile(request):
             updated = True
         if updated:
             user.save()
+            create_log(request,user,'info', '用户信息修改', f' 新用户名: {new_username}, 新邮箱: {new_email}, 新手机号: {new_phone}, 新密码: {new_password}')
             return Response({'msg': '信息修改成功'})
         else:
             return Response({'msg': '没有需要修改的信息'}, status=200)
@@ -972,10 +974,12 @@ def delete_user(request):
                 print(f"调用百度云删除用户失败: {e}")
         # 本地删除用户及人脸记录
         del_user.delete()  # 级联删除UserFaceImage
+        create_log(request,user,'info', '用户删除', f'用户名: {del_user.username}')
         return JsonResponse({'msg': '用户及人脸记录已删除（含百度云）'})
     except UserProfile.DoesNotExist:
         return JsonResponse({'msg': '用户不存在'}, status=404)
     except Exception as e:
+        create_log(request,user,'error', '用户删除失败', f'用户名: {del_user.username}, 错误信息: {str(e)}')
         return JsonResponse({'msg': f'删除失败: {str(e)}'}, status=500)
     
 @api_view(['POST'])
@@ -1004,10 +1008,12 @@ def update_permission(request):
         target_user = UserProfile.objects.get(id=user_id)
         target_user.permission = int(permission)
         target_user.save()
+        create_log(request,user,'info', '用户权限修改', f'用户名: {target_user.username}, 新权限: {permission}')
         return JsonResponse({'msg': '权限修改成功'})
     except UserProfile.DoesNotExist:
         return JsonResponse({'msg': '用户不存在'}, status=404)
     except Exception as e:
+        create_log(request,user,'error', '用户权限修改失败', f'用户名: {target_user.username}, 错误信息: {str(e)}')
         return JsonResponse({'msg': f'修改失败: {str(e)}'}, status=500)
 
 @api_view(['GET'])
@@ -1205,6 +1211,7 @@ def log_list(request):
     start_date = request.query_params.get('start_date')
     end_date = request.query_params.get('end_date')
     username = request.query_params.get('username')
+    
     # 初始化查询集
     logs = SystemLog.objects.all().select_related('user')
 
@@ -1227,6 +1234,11 @@ def log_list(request):
             logs = logs.filter(timestamp__lte=end)
         except ValueError:
             return Response({"error": "无效的结束日期格式，请使用 YYYY-MM-DD"}, status=400)
+
+    ordering = request.query_params.get('ordering')
+    if ordering:
+        logs = logs.order_by(ordering)
+    # else: 不加 order_by，保持数据库原始顺序
 
     # 分页处理
     paginator = StandardResultsSetPagination()

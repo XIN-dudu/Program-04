@@ -47,10 +47,11 @@
         :data="logs"
         border
         style="width: 100%;"
-        :default-sort="{ prop: 'timestamp', order: 'descending' }"
+        :default-sort="{ prop: 'timestamp', order: '' }"
         highlight-current-row
         size="large"
         empty-text="暂无日志数据"
+        @sort-change="handleSortChange"
       >
         <el-table-column prop="user.username" label="用户" width="120" :show-overflow-tooltip="true" />
         <el-table-column prop="level" label="级别" width="100">
@@ -64,7 +65,7 @@
             {{ scope?.row?.action || '' }}
           </template>
         </el-table-column>
-        <el-table-column prop="timestamp" label="时间" width="180" sortable>
+        <el-table-column prop="timestamp" label="时间" width="180" sortable="custom">
           <template #default="scope">
             {{ formatDate(scope?.row?.timestamp) }}
           </template>
@@ -135,10 +136,24 @@
   const loading = ref(false)
   const showVideoDialog = ref(false)
   const currentVideoUrl = ref('')
+  const sortOrder = ref('')
+  const sortField = ref('')
+
+  const handleSortChange = ({ prop, order }) => {
+    sortField.value = prop
+    if (order === 'ascending') sortOrder.value = 'asc'
+    else if (order === 'descending') sortOrder.value = 'desc'
+    else sortOrder.value = ''
+    fetchLogs(1)
+  }
   
   const fetchLogs = async (page = 1) => {
     loading.value = true
     try {
+      let ordering = ''
+      if (sortOrder.value === 'asc') ordering = sortField.value
+      else if (sortOrder.value === 'desc') ordering = '-' + sortField.value
+      // 默认 '' 不传参数
       const params = {
         page,
         page_size: pagination.value.page_size,
@@ -147,6 +162,7 @@
         start_date: filters.value.start_date || '',
         end_date: filters.value.end_date || ''
       }
+      if (ordering) params.ordering = ordering
       const response = await axios.get('/api/logs/', { params })
       logs.value = response.data.results
       pagination.value = {
