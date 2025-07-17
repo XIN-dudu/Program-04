@@ -102,3 +102,50 @@ class PreprocessedData(models.Model):
     
     def __str__(self):
         return f"{self.get_data_type_display()} - {self.date} {self.hour:02d}:00" if self.hour else f"{self.get_data_type_display()} - {self.date}"
+
+# 新增：路程分析统计表
+class TripDistanceStat(models.Model):
+    """路程分析统计表，用于存储每天短途/中途/长途的统计数据"""
+    
+    date = models.DateField(verbose_name='统计日期', unique=True)
+    
+    # 数量统计
+    short_count = models.IntegerField(verbose_name='短途数量(<4km)', default=0)
+    medium_count = models.IntegerField(verbose_name='中途数量(4-8km)', default=0)
+    long_count = models.IntegerField(verbose_name='长途数量(>8km)', default=0)
+    total_count = models.IntegerField(verbose_name='总行程数', default=0)
+    
+    # 占比统计（百分比，0-100）
+    short_ratio = models.FloatField(verbose_name='短途占比(%)', default=0.0)
+    medium_ratio = models.FloatField(verbose_name='中途占比(%)', default=0.0)
+    long_ratio = models.FloatField(verbose_name='长途占比(%)', default=0.0)
+    
+    # 平均距离统计
+    avg_short_distance = models.FloatField(verbose_name='短途平均距离(km)', null=True, blank=True)
+    avg_medium_distance = models.FloatField(verbose_name='中途平均距离(km)', null=True, blank=True)
+    avg_long_distance = models.FloatField(verbose_name='长途平均距离(km)', null=True, blank=True)
+    avg_total_distance = models.FloatField(verbose_name='总平均距离(km)', null=True, blank=True)
+    
+    # 元数据
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    
+    class Meta:
+        db_table = 'trip_distance_stat'
+        indexes = [
+            models.Index(fields=['date']),
+        ]
+        verbose_name = '路程分析统计'
+        verbose_name_plural = '路程分析统计'
+    
+    def __str__(self):
+        return f"路程分析 - {self.date} (短:{self.short_count}, 中:{self.medium_count}, 长:{self.long_count})"
+    
+    def save(self, *args, **kwargs):
+        # 自动计算总数和占比
+        self.total_count = self.short_count + self.medium_count + self.long_count
+        if self.total_count > 0:
+            self.short_ratio = round((self.short_count / self.total_count) * 100, 2)
+            self.medium_ratio = round((self.medium_count / self.total_count) * 100, 2)
+            self.long_ratio = round((self.long_count / self.total_count) * 100, 2)
+        super().save(*args, **kwargs)

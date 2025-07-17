@@ -18,6 +18,7 @@ urlpatterns = [
     path('weather_flow_analysis_preprocessed/', views.weather_flow_analysis_preprocessed),
     path('occupied_taxi_count/', views.occupied_taxi_count),
     path('occupied_taxi_count_preprocessed/', views.occupied_taxi_count_preprocessed),
+    path('trip_distance_analysis/', views.trip_distance_analysis),
     path('tasks/<int:task_id>/assign/', views.assign_task),
     path('my_tasks/', views.my_tasks),
     path('tasks/<int:task_id>/complete/', views.complete_task),

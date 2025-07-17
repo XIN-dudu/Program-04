@@ -1347,3 +1347,92 @@ def occupied_taxi_count_preprocessed(request):
         print(f"预处理载客出租车分析错误: {str(e)}")
         print(f"错误详情: {traceback.format_exc()}")
         return Response({'error': str(e)}, status=500)
+
+@api_view(['GET'])
+def trip_distance_analysis(request):
+    """路程分析API接口，返回指定日期区间的短途/中途/长途占比数据"""
+    try:
+        from .models import TripDistanceStat
+        from datetime import datetime, timedelta
+        
+        # 获取查询参数
+        start_date = request.GET.get('start_date', '2013-09-12')
+        end_date = request.GET.get('end_date', '2013-09-12')
+        
+        # 转换日期格式
+        try:
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({'error': '日期格式错误，请使用YYYY-MM-DD格式'}, status=400)
+        
+        # 查询指定日期区间的数据
+        stats = TripDistanceStat.objects.filter(
+            date__gte=start_dt,
+            date__lte=end_dt
+        ).order_by('date')
+        
+        if not stats.exists():
+            return Response({'error': f'未找到{start_date}至{end_date}的路程分析数据，请先运行预处理命令'}, status=404)
+        
+        # 构建返回数据
+        data = []
+        total_summary = {
+            'short_count': 0,
+            'medium_count': 0,
+            'long_count': 0,
+            'total_count': 0,
+            'avg_short_distance': 0,
+            'avg_medium_distance': 0,
+            'avg_long_distance': 0,
+            'avg_total_distance': 0
+        }
+        
+        for stat in stats:
+            data.append({
+                'date': stat.date.strftime('%Y-%m-%d'),
+                'short_count': stat.short_count,
+                'medium_count': stat.medium_count,
+                'long_count': stat.long_count,
+                'total_count': stat.total_count,
+                'short_ratio': stat.short_ratio,
+                'medium_ratio': stat.medium_ratio,
+                'long_ratio': stat.long_ratio,
+                'avg_short_distance': stat.avg_short_distance or 0,
+                'avg_medium_distance': stat.avg_medium_distance or 0,
+                'avg_long_distance': stat.avg_long_distance or 0,
+                'avg_total_distance': stat.avg_total_distance or 0
+            })
+            
+            # 累计总数
+            total_summary['short_count'] += stat.short_count
+            total_summary['medium_count'] += stat.medium_count
+            total_summary['long_count'] += stat.long_count
+            total_summary['total_count'] += stat.total_count
+        
+        # 计算总体平均距离
+        days_count = len(data)
+        if days_count > 0:
+            total_summary['avg_short_distance'] = round(total_summary['avg_short_distance'] / days_count, 2)
+            total_summary['avg_medium_distance'] = round(total_summary['avg_medium_distance'] / days_count, 2)
+            total_summary['avg_long_distance'] = round(total_summary['avg_long_distance'] / days_count, 2)
+            total_summary['avg_total_distance'] = round(total_summary['avg_total_distance'] / days_count, 2)
+        
+        # 计算总体占比
+        if total_summary['total_count'] > 0:
+            total_summary['short_ratio'] = round((total_summary['short_count'] / total_summary['total_count']) * 100, 2)
+            total_summary['medium_ratio'] = round((total_summary['medium_count'] / total_summary['total_count']) * 100, 2)
+            total_summary['long_ratio'] = round((total_summary['long_count'] / total_summary['total_count']) * 100, 2)
+        
+        return Response({
+            'daily_data': data,
+            'summary': total_summary,
+            'date_range': {
+                'start_date': start_date,
+                'end_date': end_date,
+                'days_count': days_count
+            }
+        })
+        
+    except Exception as e:
+        return Response({'error': f'获取路程分析数据失败: {str(e)}'}, status=500)
