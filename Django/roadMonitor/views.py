@@ -908,19 +908,21 @@ def od_analysis(request):
 def weather_flow_analysis(request):
     """
     返回每小时的天气数据和客流量数据，分析天气对客流量的影响。
-    读取web/public/static/data/jn_weather_c.csv，遍历所有OD表统计每小时订单数，按时间对齐。
+    优化版本：使用更高效的查询方式。
     """
     import pymysql
     import os
     from django.conf import settings
     import pandas as pd
-    # 修正路径：Django项目的上一级web/public/static/data/jn_weather_c.csv
-    weather_path = os.path.abspath(os.path.join(settings.BASE_DIR, '..', 'web', 'public', 'static', 'data', 'jn_weather_c.csv'))
+    
     try:
+        # 1. 读取天气数据
+        weather_path = os.path.abspath(os.path.join(settings.BASE_DIR, '..', 'web', 'public', 'static', 'data', 'jn_weather_c.csv'))
         weather_df = pd.read_csv(weather_path)
         weather_df['Time_new'] = pd.to_datetime(weather_df['Time_new'])
         weather_df.set_index('Time_new', inplace=True)
-        # 2. 统计每小时客流量
+        
+        # 2. 优化数据库查询 - 一次性获取所有OD表的客流量统计
         conn = pymysql.connect(
             host='122.9.42.250',
             user='root',
@@ -929,23 +931,35 @@ def weather_flow_analysis(request):
             charset='utf8'
         )
         cursor = conn.cursor()
-        # 获取所有OD对表名
+        
+        # 获取所有OD表名
         cursor.execute("SHOW TABLES LIKE '%_od_pairs'")
         od_tables = [row[0] for row in cursor.fetchall()]
+        
         # 构建所有小时的时间戳
         all_times = weather_df.index.unique().sort_values()
         flow_dict = {t: 0 for t in all_times}
-        for table_name in od_tables:
-            # 只查o_time字段
-            cursor.execute(f"SELECT o_time FROM {table_name}")
+        
+        # 优化：使用UNION ALL一次性查询所有表的数据
+        if od_tables:
+            union_queries = []
+            for table_name in od_tables:
+                union_queries.append(f"SELECT o_time FROM {table_name}")
+            
+            union_sql = " UNION ALL ".join(union_queries)
+            cursor.execute(union_sql)
+            
+            # 统计每小时客流量
             for row in cursor.fetchall():
                 if row[0] is not None:
                     t = pd.to_datetime(row[0]).replace(minute=0, second=0, microsecond=0)
                     if t in flow_dict:
                         flow_dict[t] += 1
+        
         cursor.close()
         conn.close()
-        # 合并天气和客流量
+        
+        # 3. 合并天气和客流量数据
         result = []
         for t in all_times:
             w = weather_df.loc[t]
@@ -957,8 +971,13 @@ def weather_flow_analysis(request):
                 'precip': float(w['Precip']),
                 'flow': int(flow_dict[t])
             })
+        
         return Response(result)
+        
     except Exception as e:
+        import traceback
+        print(f"天气客流分析错误: {str(e)}")
+        print(f"错误详情: {traceback.format_exc()}")
         # 返回空数组，保证前端不报错
         return Response([])
         
@@ -1158,3 +1177,173 @@ def occupied_taxi_count(request):
     except Exception as e:
         import traceback
         return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+
+@api_view(['GET'])
+def weather_flow_analysis_fast(request):
+    """
+    快速版本的天气客流分析。
+    使用预计算的方式，避免重复查询。
+    """
+    import pymysql
+    import os
+    from django.conf import settings
+    import pandas as pd
+    
+    try:
+        # 1. 读取天气数据
+        weather_path = os.path.abspath(os.path.join(settings.BASE_DIR, '..', 'web', 'public', 'static', 'data', 'jn_weather_c.csv'))
+        weather_df = pd.read_csv(weather_path)
+        weather_df['Time_new'] = pd.to_datetime(weather_df['Time_new'])
+        weather_df.set_index('Time_new', inplace=True)
+        
+        # 2. 使用更高效的查询方式
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+        
+        # 获取所有OD表名
+        cursor.execute("SHOW TABLES LIKE '%_od_pairs'")
+        od_tables = [row[0] for row in cursor.fetchall()]
+        
+        # 构建所有小时的时间戳
+        all_times = weather_df.index.unique().sort_values()
+        flow_dict = {t: 0 for t in all_times}
+        
+        # 优化：使用更高效的查询方式
+        if od_tables:
+            # 使用单个查询获取所有数据
+            placeholders = ', '.join(['%s'] * len(od_tables))
+            sql = f"""
+                SELECT o_time FROM (
+                    {' UNION ALL '.join([f'SELECT o_time FROM {table}' for table in od_tables])}
+                ) AS combined_data
+                WHERE o_time IS NOT NULL
+            """
+            cursor.execute(sql)
+            
+            # 统计每小时客流量
+            for row in cursor.fetchall():
+                if row[0] is not None:
+                    t = pd.to_datetime(row[0]).replace(minute=0, second=0, microsecond=0)
+                    if t in flow_dict:
+                        flow_dict[t] += 1
+        
+        cursor.close()
+        conn.close()
+        
+        # 3. 合并天气和客流量数据
+        result = []
+        for t in all_times:
+            w = weather_df.loc[t]
+            result.append({
+                'time': t.strftime('%Y-%m-%d %H:%M'),
+                'temperature': float(w['Temperature']),
+                'humidity': float(w['Humidity']),
+                'wind_speed': float(w['Wind_Speed']),
+                'precip': float(w['Precip']),
+                'flow': int(flow_dict[t])
+            })
+        
+        return Response(result)
+        
+    except Exception as e:
+        import traceback
+        print(f"快速天气客流分析错误: {str(e)}")
+        print(f"错误详情: {traceback.format_exc()}")
+        return Response([])
+
+@api_view(['GET'])
+def weather_flow_analysis_preprocessed(request):
+    """
+    使用预处理数据的天气客流分析API。
+    从preprocessed_data表中读取数据，大大提高查询速度。
+    """
+    from roadMonitor.models import PreprocessedData
+    from datetime import datetime
+    
+    try:
+        # 从预处理数据表中获取天气客流数据
+        weather_flow_data = PreprocessedData.objects.filter(
+            data_type='weather_flow',
+            date='2013-09-12'  # 可以根据需要修改日期
+        ).order_by('hour')
+        
+        result = []
+        for record in weather_flow_data:
+            result.append({
+                'time': f"2013-09-12 {record.hour:02d}:00",
+                'temperature': record.temperature,
+                'humidity': record.humidity,
+                'wind_speed': record.wind_speed,
+                'precip': record.precip,
+                'flow': record.passenger_flow
+            })
+        
+        return Response(result)
+        
+    except Exception as e:
+        import traceback
+        print(f"预处理天气客流分析错误: {str(e)}")
+        print(f"错误详情: {traceback.format_exc()}")
+        return Response([])
+
+@api_view(['GET'])
+def occupied_taxi_count_preprocessed(request):
+    """
+    使用预处理数据的载客出租车数量统计API。
+    从preprocessed_data表中读取数据，大大提高查询速度。
+    """
+    from roadMonitor.models import PreprocessedData
+    from datetime import datetime
+    
+    try:
+        # 从预处理数据表中获取载客出租车数据
+        occupied_data = PreprocessedData.objects.filter(
+            data_type='occupied_taxi',
+            date='2013-09-12'  # 可以根据需要修改日期
+        ).order_by('hour')
+        
+        time_slots_list = []
+        occupied_counts = []
+        
+        # 生成时间区间和对应的载客数量
+        for i in range(12):  # 12个2小时区间
+            start_hour = i * 2
+            end_hour = start_hour + 2
+            
+            if i == 0:
+                time_slots_list.append(f"当前-{end_hour:02d}:00")
+            else:
+                time_slots_list.append(f"{start_hour:02d}:00-{end_hour:02d}:00")
+            
+            # 统计该时间区间的载客车辆数
+            count = 0
+            for hour in range(start_hour, end_hour):
+                record = occupied_data.filter(hour=hour).first()
+                if record:
+                    count += record.occupied_taxi_count
+            occupied_counts.append(count)
+        
+        total_occupied = sum(occupied_counts)
+        avg_occupied = total_occupied / len(occupied_counts) if occupied_counts else 0
+        peak_hour = time_slots_list[occupied_counts.index(max(occupied_counts))] if occupied_counts else ""
+        
+        return Response({
+            'time_slots': time_slots_list,
+            'occupied_counts': occupied_counts,
+            'total_occupied': total_occupied,
+            'avg_occupied': round(avg_occupied, 2),
+            'peak_hour': peak_hour,
+            'current_time': '2013-09-12 12:00:00'
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"预处理载客出租车分析错误: {str(e)}")
+        print(f"错误详情: {traceback.format_exc()}")
+        return Response({'error': str(e)}, status=500)

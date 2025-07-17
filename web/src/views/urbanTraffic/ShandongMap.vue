@@ -83,7 +83,7 @@
         <div class="loading-spinner"></div>
         <div class="loading-text">正在加载天气与客流数据...</div>
       </div>
-      <div v-if="currentView === 'population' && showDataSource" class="data-source">
+            <div v-if="currentView === 'population' && showDataSource" class="data-source">
         数据来源：济南市统计局2022年数据
       </div>
       <div v-if="currentView === 'weekflow' && showDataSource" class="data-source-bottom">
@@ -345,7 +345,8 @@ export default {
        if (this.chart) this.chart.clear();
        this.loading = true; // 开始加载
        try {
-         const response = await fetch('/api/occupied_taxi_count/');
+         // 使用预处理数据的API接口
+         const response = await fetch('/api/occupied_taxi_count_preprocessed/');
          const data = await response.json();
          if (data.error) {
            console.error('获取载客出租车数据失败:', data.error);
@@ -469,10 +470,12 @@ export default {
       }
       this.weatherLoading = true; // 开始加载
       try {
-        const res = await fetch('/api/weather_flow_analysis/');
+        // 使用预处理数据的API接口
+        const res = await fetch('/api/weather_flow_analysis_preprocessed/');
         const data = await res.json();
         this.weatherFlowData = data;
       } catch (e) {
+        console.error('天气客流数据获取失败:', e);
         this.weatherFlowData = [];
       } finally {
         this.weatherLoading = false; // 结束加载
@@ -502,7 +505,7 @@ export default {
           { type: 'value', name: '客流量', position: 'left', min: 0, axisLine: { show: true }, axisLabel: { color: '#1890ff' } },
           { type: 'value', name: '温度(°C)', position: 'right', offset: 0, axisLine: { show: true }, axisLabel: { color: '#faad14' } }
         ],
-        dataZoom: [ { type: 'slider', start: 0, end: 100, xAxisIndex: 0 } ],
+
         series: [
           { name: '客流量', type: 'line', yAxisIndex: 0, data: flows, smooth: true, lineStyle: { color: '#1890ff' }, emphasis: { focus: 'series' } },
           { name: '温度', type: 'line', yAxisIndex: 1, data: temps, smooth: true, lineStyle: { color: '#faad14' }, emphasis: { focus: 'series' } },
