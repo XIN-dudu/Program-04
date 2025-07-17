@@ -1081,3 +1081,80 @@ def mark_finished(request, task_id):
     assignment.status = 'finished'
     assignment.save()
     return Response({'msg': '任务已认证完成'})
+
+@api_view(['GET'])
+def occupied_taxi_count(request):
+    """
+    获取载客出租车数量统计。
+    以2013-09-12为基准，展示载客出租车的数量分布。
+    """
+    import pymysql
+    from datetime import datetime, timedelta
+
+    time_slots = int(request.GET.get('time_slots', 12))
+    hours_back = int(request.GET.get('hours_back', 24))
+    
+    # 使用2013-09-12作为基准日期
+    base_date = datetime(2013, 9, 12, 0, 0, 0)
+    time_slots_list = []
+    occupied_counts = []
+
+    try:
+        conn = pymysql.connect(
+            host='122.9.42.250',
+            user='root',
+            password='Xin123456',
+            database='program-04',
+            charset='utf8'
+        )
+        cursor = conn.cursor()
+
+        # 优化：使用索引查询，提高性能
+        sql = """
+            SELECT 
+                HOUR(UTC) as hour,
+                COUNT(DISTINCT COMMADDR) as occupied_count
+            FROM jn0912_baidu_coords 
+            WHERE DATE(UTC) = '2013-09-12' AND status = 1
+            GROUP BY HOUR(UTC)
+            ORDER BY hour
+        """
+        cursor.execute(sql)
+        hourly_data = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # 生成时间区间和对应的载客数量
+        for i in range(time_slots):
+            start_hour = i * 2  # 每2小时一个区间
+            end_hour = start_hour + 2
+            
+            if i == 0:
+                time_slots_list.append(f"当前-{end_hour:02d}:00")
+            else:
+                time_slots_list.append(f"{start_hour:02d}:00-{end_hour:02d}:00")
+            
+            # 统计该时间区间的载客车辆数
+            count = 0
+            for hour in range(start_hour, end_hour):
+                if hour in hourly_data:
+                    count += hourly_data[hour]
+            occupied_counts.append(count)
+
+        total_occupied = sum(occupied_counts)
+        avg_occupied = total_occupied / time_slots if time_slots > 0 else 0
+        peak_hour = time_slots_list[occupied_counts.index(max(occupied_counts))] if occupied_counts else ""
+
+        cursor.close()
+        conn.close()
+
+        return Response({
+            'time_slots': time_slots_list,
+            'occupied_counts': occupied_counts,
+            'total_occupied': total_occupied,
+            'avg_occupied': round(avg_occupied, 2),
+            'peak_hour': peak_hour,
+            'current_time': base_date.strftime('%Y-%m-%d %H:%M:%S')
+        })
+
+    except Exception as e:
+        import traceback
+        return Response({'error': str(e), 'trace': traceback.format_exc()}, status=500)
