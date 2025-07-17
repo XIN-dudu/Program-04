@@ -122,7 +122,6 @@ const openCamera = () => {
       })
   }
 }
-
 const captureFrameAndSend = () => {
   const video = videoElement.value
   if (!video) return
@@ -150,18 +149,21 @@ const captureFrameAndSend = () => {
       const data = res.data
       if (!data || !data.description || !Array.isArray(data.description)) return
 
-      // 每一帧结果都作为新的 result 添加
       results.value.unshift({
         road_id: `${data.road_id}（帧时间：${new Date().toLocaleTimeString()}）`,
         description: data.description,
         full_image_base64: data.full_image_base64 || ''
       })
 
+      //保留最新结果
+      results.value = results.value.slice(0, 3)
+
     } catch (error) {
       console.warn('帧上传失败:', error)
     }
   }, 'image/jpeg')
 }
+
 
 
 const startRecording = () => {
