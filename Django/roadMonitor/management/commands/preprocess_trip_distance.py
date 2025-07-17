@@ -5,8 +5,9 @@ import pymysql
 import pandas as pd
 import os
 from django.conf import settings
-from roadMonitor.models import TripDistanceStat
+from roadMonitor.models import TripDistanceStat, TripDetailStat
 import math
+from tqdm import tqdm
 
 
 class Command(BaseCommand):
@@ -77,56 +78,15 @@ class Command(BaseCommand):
                 user='root',
                 password='Xin123456',
                 database='program-04',
-                charset='utf8'
+                charset='utf8',
+                cursorclass=pymysql.cursors.SSCursor  # 流式游标
             )
             cursor = conn.cursor()
-            
-            # 获取指定日期的所有载客轨迹数据
-            sql = """
-                SELECT 
-                    COMMADDR,
-                    UTC,
-                    LAT,
-                    LON,
-                    status
-                FROM jn0912_baidu_coords 
-                WHERE DATE(UTC) = %s 
-                ORDER BY COMMADDR, UTC
-            """
-            cursor.execute(sql, (target_date,))
-            rows = cursor.fetchall()
-            
-            if not rows:
-                self.stdout.write(self.style.WARNING(f"未找到 {target_date} 的数据"))
-                return
-            
-            # 按车牌分组处理轨迹
-            trips_by_car = {}
-            current_car = None
-            current_trip = []
-            
-            for row in rows:
-                car_id, utc, lat, lon, status = row
-                
-                if current_car != car_id:
-                    # 处理上一辆车的轨迹
-                    if current_trip:
-                        self.process_car_trips(current_car, current_trip, trips_by_car)
-                    current_car = car_id
-                    current_trip = []
-                
-                current_trip.append({
-                    'utc': utc,
-                    'lat': float(lat),
-                    'lon': float(lon),
-                    'status': status
-                })
-            
-            # 处理最后一辆车的轨迹
-            if current_trip:
-                self.process_car_trips(current_car, current_trip, trips_by_car)
-            
-            # 统计每天的距离分布
+            # 先查所有车牌
+            car_cursor = conn.cursor()
+            car_cursor.execute('SELECT DISTINCT COMMADDR FROM jn0912_baidu_coords WHERE UTC >= %s AND UTC < %s AND status=1', (f'{target_date} 00:00:00', f'{target_date} 23:59:59'))
+            car_ids = [row[0] for row in car_cursor.fetchall()]
+            self.stdout.write(f"共检测到 {len(car_ids)} 辆车，开始分车处理...")
             daily_stats = {
                 'short_count': 0,
                 'medium_count': 0,
@@ -136,31 +96,58 @@ class Command(BaseCommand):
                 'long_distances': [],
                 'all_distances': []
             }
-            
-            # 处理所有行程
-            for car_id, trips in trips_by_car.items():
+            for idx, car_id in enumerate(car_ids, 1):
+                self.stdout.write(f"正在处理第 {idx}/{len(car_ids)} 辆车：{car_id}")
+                cursor.execute('SELECT UTC, LAT, LON, status, SPEED FROM jn0912_baidu_coords WHERE UTC >= %s AND UTC < %s AND status=1 AND COMMADDR=%s ORDER BY UTC', (f'{target_date} 00:00:00', f'{target_date} 23:59:59', car_id))
+                rows = cursor.fetchall()
+                trips = []
+                current_trip = []
+                for row in rows:
+                    utc, lat, lon, status, speed = row
+                    current_trip.append({
+                        'utc': utc,
+                        'lat': float(lat),
+                        'lon': float(lon),
+                        'status': status,
+                        'speed': speed
+                    })
+                if len(current_trip) >= 2:
+                    trips.append(current_trip)
+                self.stdout.write(f"  车辆 {car_id} 共 {len(trips)} 单...")
                 for trip in trips:
-                    if len(trip) >= 2:  # 至少需要起点和终点
-                        start_point = trip[0]
-                        end_point = trip[-1]
-                        
-                        distance = self.calculate_distance(
-                            start_point['lat'], start_point['lon'],
-                            end_point['lat'], end_point['lon']
-                        )
-                        
-                        trip_type = self.classify_trip_distance(distance)
-                        daily_stats[f'{trip_type}_count'] += 1
-                        daily_stats[f'{trip_type}_distances'].append(distance)
-                        daily_stats['all_distances'].append(distance)
-            
+                    start_point = trip[0]
+                    end_point = trip[-1]
+                    distance = self.calculate_distance(
+                        start_point['lat'], start_point['lon'],
+                        end_point['lat'], end_point['lon']
+                    )
+                    trip_type = self.classify_trip_distance(distance)
+                    daily_stats[f'{trip_type}_count'] += 1
+                    daily_stats[f'{trip_type}_distances'].append(distance)
+                    daily_stats['all_distances'].append(distance)
+                    duration = (end_point['utc'] - start_point['utc']).total_seconds() / 60
+                    avg_speed = distance / (duration / 60) if duration > 0 else 0
+                    TripDetailStat.objects.create(
+                        license_plate=car_id,
+                        date=start_point['utc'].date(),
+                        start_time=start_point['utc'],
+                        end_time=end_point['utc'],
+                        start_lng=start_point['lon'],
+                        start_lat=start_point['lat'],
+                        end_lng=end_point['lon'],
+                        end_lat=end_point['lat'],
+                        distance=round(distance, 3),
+                        duration=round(duration, 2),
+                        avg_speed=round(avg_speed, 2),
+                        trip_type=trip_type
+                    )
+                self.stdout.write(f"  车辆 {car_id} 处理完成，共写入 {len(trips)} 单明细。")
             # 计算平均距离
             avg_short = sum(daily_stats['short_distances']) / len(daily_stats['short_distances']) if daily_stats['short_distances'] else 0
             avg_medium = sum(daily_stats['medium_distances']) / len(daily_stats['medium_distances']) if daily_stats['medium_distances'] else 0
             avg_long = sum(daily_stats['long_distances']) / len(daily_stats['long_distances']) if daily_stats['long_distances'] else 0
             avg_total = sum(daily_stats['all_distances']) / len(daily_stats['all_distances']) if daily_stats['all_distances'] else 0
-            
-            # 保存到数据库
+            self.stdout.write("正在写入汇总表 TripDistanceStat ...")
             TripDistanceStat.objects.update_or_create(
                 date=target_datetime.date(),
                 defaults={
@@ -173,10 +160,9 @@ class Command(BaseCommand):
                     'avg_total_distance': round(avg_total, 2),
                 }
             )
-            
+            self.stdout.write("TripDistanceStat 汇总写入完成！")
             cursor.close()
             conn.close()
-            
             total_trips = daily_stats['short_count'] + daily_stats['medium_count'] + daily_stats['long_count']
             self.stdout.write(f"路程分析数据预处理完成:")
             self.stdout.write(f"  - 总行程数: {total_trips}")
@@ -184,7 +170,6 @@ class Command(BaseCommand):
             self.stdout.write(f"  - 中途(4-8km): {daily_stats['medium_count']} 次")
             self.stdout.write(f"  - 长途(>8km): {daily_stats['long_count']} 次")
             self.stdout.write(f"  - 平均距离: {avg_total:.2f} km")
-            
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"路程分析数据预处理失败: {str(e)}"))
 
@@ -192,17 +177,13 @@ class Command(BaseCommand):
         """处理单辆车的轨迹，提取载客行程"""
         if car_id not in trips_by_car:
             trips_by_car[car_id] = []
-        
-        # 按载客状态分组
         current_trip = []
         for point in trajectory:
-            if point['status'] == 1:  # 载客状态
+            if point['status'] == 1:
                 current_trip.append(point)
-            else:  # 空车状态
-                if current_trip:  # 结束当前行程
+            else:
+                if len(current_trip) >= 2:
                     trips_by_car[car_id].append(current_trip)
                     current_trip = []
-        
-        # 处理最后一个行程
-        if current_trip:
+        if len(current_trip) >= 2:
             trips_by_car[car_id].append(current_trip) 

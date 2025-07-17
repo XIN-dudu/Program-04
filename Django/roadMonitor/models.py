@@ -1,4 +1,5 @@
 from django.db import models
+from tqdm import tqdm
 
 # Create your models here.
 class roadRecord(models.Model):
@@ -149,3 +150,41 @@ class TripDistanceStat(models.Model):
             self.medium_ratio = round((self.medium_count / self.total_count) * 100, 2)
             self.long_ratio = round((self.long_count / self.total_count) * 100, 2)
         super().save(*args, **kwargs)
+
+# 新增：路程明细表
+class TripDetailStat(models.Model):
+    """路程明细表，存储每一单的详细信息"""
+    license_plate = models.CharField(max_length=20, verbose_name='车牌号')
+    date = models.DateField(verbose_name='日期')
+    start_time = models.DateTimeField(verbose_name='起始时间')
+    end_time = models.DateTimeField(verbose_name='结束时间')
+    start_lng = models.FloatField(verbose_name='起点经度')
+    start_lat = models.FloatField(verbose_name='起点纬度')
+    end_lng = models.FloatField(verbose_name='终点经度')
+    end_lat = models.FloatField(verbose_name='终点纬度')
+    distance = models.FloatField(verbose_name='行程距离(km)')
+    duration = models.FloatField(verbose_name='行程时长(分钟)')
+    avg_speed = models.FloatField(verbose_name='平均速度(km/h)')
+    TRIP_TYPE_CHOICES = [
+        ('short', '短途'),
+        ('medium', '中途'),
+        ('long', '长途'),
+    ]
+    trip_type = models.CharField(max_length=10, choices=TRIP_TYPE_CHOICES, verbose_name='路程类型')
+    # 可扩展字段
+    extra = models.JSONField(null=True, blank=True, verbose_name='扩展信息')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'trip_detail_stat'
+        indexes = [
+            models.Index(fields=['date']),
+            models.Index(fields=['license_plate', 'date']),
+            models.Index(fields=['trip_type', 'date']),
+        ]
+        verbose_name = '路程明细'
+        verbose_name_plural = '路程明细'
+
+    def __str__(self):
+        return f"{self.license_plate} {self.date} {self.trip_type} {self.distance}km"

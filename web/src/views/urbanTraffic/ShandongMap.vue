@@ -30,24 +30,16 @@
         >
           路程分析
         </button>
+        <button 
+          @click="showRoadSpeed" 
+          class="action-btn"
+          :class="{ active: currentView === 'road-speed' }"
+        >
+          道路速度
+        </button>
       </div>
       <transition-group name="slide-stack" tag="div" class="stack-group">
         <div v-if="currentView === 'weekflow'" key="analysis" class="analysis-controls">
-          <h4>分析类型</h4>
-          <div class="radio-group">
-            <label class="radio-item">
-              <input type="radio" value="both" v-model="analysisType" @change="changeAnalysisType('both')" />
-              <span>起点+终点</span>
-            </label>
-            <label class="radio-item">
-              <input type="radio" value="origin" v-model="analysisType" @change="changeAnalysisType('origin')" />
-              <span>仅起点</span>
-            </label>
-            <label class="radio-item">
-              <input type="radio" value="destination" v-model="analysisType" @change="changeAnalysisType('destination')" />
-              <span>仅终点</span>
-            </label>
-          </div>
           <div v-if="analysisSummary.total_trips > 0" class="summary-info">
             <h4>统计摘要</h4>
             <div class="summary-item"><span>总行程数：</span><span class="summary-value">{{ analysisSummary.total_trips }}</span></div>
@@ -87,7 +79,15 @@
       </transition-group>
     </div>
     <div class="right-panel">
-      <div ref="chart" class="map-chart"></div>
+      <div v-show="currentView !== 'road-speed'" ref="chart" class="map-chart"></div>
+      <div v-show="currentView === 'road-speed'">
+        <div id="baiduMapContainer" style="width: 100%; height: 600px;"></div>
+        <div style="margin-top: 10px;">
+          <span style="color: green;">● 速度快</span>
+          <span style="color: orange; margin-left: 20px;">● 速度中</span>
+          <span style="color: red; margin-left: 20px;">● 速度慢</span>
+        </div>
+      </div>
       <div v-if="loading && currentView === 'occupied-taxi'" class="loading-overlay">
         <div class="loading-spinner"></div>
         <div class="loading-text">正在加载载客出租车数据...</div>
@@ -142,7 +142,7 @@ export default {
       chart: null,
       weekFlowData: {},
       timeSlots: [],
-      analysisType: 'both',
+      analysisType: 'both', // 默认起点+终点
       analysisSummary: {},
       weatherFlowChart: null,
       weatherFlowData: [],
@@ -697,11 +697,72 @@ export default {
       };
       this.weatherFlowChart.setOption(option, true);
     },
-    changeAnalysisType(type) {
-      this.analysisType = type;
-      if (this.currentView === 'weekflow') {
-        this.renderWeekFlowChart();
+    showRoadSpeed() {
+      this.currentView = 'road-speed';
+      this.showDataSource = false;
+      this.$nextTick(() => {
+        this.initBaiduMap();
+      });
+    },
+    initBaiduMap() {
+      // 防止重复加载
+      if (window.BMap && document.getElementById('baiduMapContainer')) {
+        this.renderBaiduRoadSpeed();
+        return;
       }
+      // 动态加载百度地图API
+      const AK = 'w9o8GAGD1jG6G8G1G8GAGD1jG6G8G1G8'; // 可替换为你自己的AK
+      if (!window.BMap) {
+        const script = document.createElement('script');
+        script.src = `https://api.map.baidu.com/api?v=3.0&ak=${AK}&callback=onBMapCallback`;
+        document.body.appendChild(script);
+        window.onBMapCallback = this.renderBaiduRoadSpeed;
+      } else {
+        this.renderBaiduRoadSpeed();
+      }
+    },
+    renderBaiduRoadSpeed() {
+      const map = new window.BMap.Map('baiduMapContainer');
+      map.centerAndZoom(new window.BMap.Point(117.000923, 36.675807), 12);
+      map.enableScrollWheelZoom(true);
+
+      // mock数据：三条路段，不同速度
+      const roadData = [
+        {
+          path: [
+            {lng: 117.000923, lat: 36.675807},
+            {lng: 117.010923, lat: 36.675807}
+          ],
+          speed: 45
+        },
+        {
+          path: [
+            {lng: 117.010923, lat: 36.675807},
+            {lng: 117.020923, lat: 36.680807}
+          ],
+          speed: 25
+        },
+        {
+          path: [
+            {lng: 117.020923, lat: 36.680807},
+            {lng: 117.030923, lat: 36.685807}
+          ],
+          speed: 10
+        }
+      ];
+
+      roadData.forEach(road => {
+        let color = 'green';
+        if (road.speed < 15) color = 'red';
+        else if (road.speed < 35) color = 'orange';
+        const points = road.path.map(p => new window.BMap.Point(p.lng, p.lat));
+        const polyline = new window.BMap.Polyline(points, {
+          strokeColor: color,
+          strokeWeight: 8,
+          strokeOpacity: 0.8
+        });
+        map.addOverlay(polyline);
+      });
     },
   }
 };
