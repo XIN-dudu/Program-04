@@ -205,6 +205,13 @@ def process_video_task(video_path, output_subdir, name, roadId):
 
 @api_view(['GET'])
 def test_get(request):
+    """
+    测试接口：获取所有路面检测记录。
+    
+    GET参数：无
+    返回：
+        - 路面检测记录列表（包含所有字段）
+    """
     records = roadRecord.objects.all()
     serializer = RoadSerializer(records, many=True)
     #print(serializer.data)
@@ -217,8 +224,10 @@ def upload_image(request):
     """
     上传路面图像并检测裂缝。
 
+    用于上传路面图片或视频，自动检测裂缝类型、长度、面积和严重程度。
+    
     POST参数：
-        - file (file, 必填): 路面图片文件
+        - file (file, 必填): 路面图片或视频文件
         - roadId (string, 必填): 道路编号
     返回：
         - title (string): 检测类型
@@ -362,6 +371,19 @@ def upload_image(request):
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def upload_stream(request):
+    """
+    上传监控视频流并进行实时检测。
+
+    用于上传监控视频流文件，每10帧进行一次检测，返回检测结果和处理后图片的base64编码。
+    
+    POST参数：
+        - file (file, 必填): 视频流文件
+        - roadId (string, 可选): 道路编号
+    返回：
+        - road_id (string): 道路编号
+        - description (list): 检测结果列表
+        - full_image_base64 (string): 检测后图片的base64编码
+    """
     uploaded_file = request.FILES.get('file')
     road_id = request.POST.get('roadId', 'unknown')
 
@@ -388,11 +410,12 @@ def history_get(request):
     """
     获取历史检测记录。
 
-    GET参数：无
+    用于获取所有历史检测任务记录，可选unfinished_only参数筛选未完成任务。
+    
+    GET参数：
+        - unfinished_only (bool, 可选): 是否只返回未完成的任务，默认False
     返回：
-        - success (string): 操作结果
-    示例返回：
-        {"success": "ok"}
+        - 检测记录列表，包含检测类型、描述、分配状态等
     """
     unfinished_only = request.GET.get('unfinished_only')
     records = roadRecord.objects.all()
@@ -415,11 +438,12 @@ def history_delete(request, diseaseId):
     """
     删除历史检测记录。
 
-    DELETE参数：无
+    根据病害ID删除指定检测记录。
+    
+    DELETE参数：
+        - diseaseId (int, 必填): 检测记录主键ID
     返回：
-        - success (string): 操作结果
-    示例返回：
-        {"success": "ok"}
+        - 删除结果（成功/失败）
     """
     try:
         # 查询需要删除数据库的记录
@@ -470,6 +494,8 @@ def heatmap_data(request):
     """
     获取热力图数据。
 
+    用于获取指定时间段、日期的热力图点数据，支持时间和日期筛选。
+    
     GET参数：
         - start_time (string, 可选): 起始时间，格式如 '08:00:00'，默认00:00:00
         - end_time (string, 可选): 结束时间，格式如 '08:15:00'，默认23:59:59

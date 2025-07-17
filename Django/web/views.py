@@ -1383,6 +1383,23 @@ def car_list(request):
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def liveness_and_face_verify(request):
+    """
+    活体检测与人脸识别联合验证接口。
+
+    用于上传用户视频和多帧图片，先进行活体检测，再对每一帧进行人脸识别，双重验证身份。
+
+    POST参数：
+        - user_id (string, 必填): 用户名或用户ID
+        - video (file, 必填): 现场录制的视频文件
+        - frame0, frame1, ... (file, 必填): 多帧图片（建议3-5帧），用于人脸识别
+    返回：
+        - success (bool): 是否验证通过
+        - msg (string): 结果说明
+        - fail_type (string, 可选): 失败类型（如param_error, user_not_found, short_video, network_error, intrusion, backend_error）
+    典型返回：
+        {"success": true, "msg": "验证通过"}
+        {"success": false, "msg": "人脸识别未通过", "fail_type": "intrusion"}
+    """
     username = request.data.get('user_id') or request.POST.get('user_id')
     video_file = request.FILES.get('video')
     frames = [file for key, file in request.FILES.items() if key.startswith('frame')]
