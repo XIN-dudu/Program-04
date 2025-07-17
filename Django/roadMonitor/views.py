@@ -29,7 +29,7 @@ from .serializers import RoadRecordSerializer, RoadSerializer
 from .models import roadRecord, RepairAssignment, RepairCompletionImage
 from web.models import UserProfile
 
-pixel_to_meter = 0.001
+pixel_to_meter = 0.003
 CLASS_LABELS = {
     0: "D00",  # 纵向裂纹
     1: "D10",  # 横向裂纹
@@ -103,7 +103,7 @@ def process_video_task(video_path, output_subdir, name, roadId):
             raise ValueError("无法打开视频文件")
         
         previous_frame = None
-        change_threshold = 0.001  # 变化阈值（总像素的1%)
+        change_threshold = 0.005  # 变化阈值
         # 创建输出目录
         output_dir = os.path.join(settings.MEDIA_ROOT, output_subdir)
         os.makedirs(output_dir, exist_ok=True)
@@ -139,30 +139,36 @@ def process_video_task(video_path, output_subdir, name, roadId):
                     # 计算变化区域占比
                     change_ratio = cv2.countNonZero(thresh) / (width * height)
                     change_detected = change_ratio > change_threshold
-                    print(change_ratio)
+                    #print(change_ratio)
                 
                 # 更新前一帧
                 previous_frame = frame.copy()
 
                 if frame_count % 5 == 0:
-                    results = model(frame)
-                if results and len(results[0].boxes) > 0:
-                    boxes = results[0].boxes
-                    classes = boxes.cls.cpu().numpy()  # 获取类别索引
-                    confidences = boxes.conf.cpu().numpy()  # 获取置信度
-                    # 找到最高置信度的检测结果
-                    main_idx = confidences.argmax()
-                    class_idx = int(classes[main_idx])
-                    label = CLASS_LABELS.get(class_idx, "unknown")
+                    results = model(
+                        frame,
+                        save=False,
+                        conf = 0.5)
+                    annotated_frame = results[0].plot()
+                    # 写入处理后的帧
+                    out.write(annotated_frame)
+                    if results and len(results[0].boxes) > 0 and change_detected:
+                        boxes = results[0].boxes
+                        classes = boxes.cls.cpu().numpy()  # 获取类别索引
+                        confidences = boxes.conf.cpu().numpy()  # 获取置信度
+                        # 找到最高置信度的检测结果
+                        main_idx = confidences.argmax()
+                        class_idx = int(classes[main_idx])
+                        label = CLASS_LABELS.get(class_idx, "unknown")
+                        #print(label, " ", getLabel(label))
+                        
+                        current_length, current_area = calculate_dimensions(results[0].boxes)
+                        max_length = max(max_length, current_length)
                     
-                    current_length, current_area = calculate_dimensions(results[0].boxes)
-                    max_length = max(max_length, current_length)
-                    if change_detected:
                         #保存这一帧的图片
                         saved_frames_dir = os.path.join(settings.MEDIA_ROOT, 'road', 'video', os.path.splitext(name)[0])
-                        print(saved_frames_dir)
+                        # print(saved_frames_dir)
                         os.makedirs(saved_frames_dir, exist_ok=True)
-                        
                         frame_filename = f"{count}.jpg"
                         frame_path = os.path.join(saved_frames_dir, frame_filename)
                         # 保存标注后的帧
@@ -173,16 +179,13 @@ def process_video_task(video_path, output_subdir, name, roadId):
                             'area': current_area * (pixel_to_meter**2),
                             'severity': checkSeverity(current_length, current_area, getLabel(label)),
                             'url': os.path.join('video', os.path.splitext(name)[0], frame_filename)
-                            }) 
+                            })
                         count += 1
                         total_area += current_area
+                        results.clear()
 
-                # YOLO推理
-                results = model(frame)
-                annotated_frame = results[0].plot()
-                
-                # 写入处理后的帧
-                out.write(annotated_frame)
+                    #results = model(frame)
+                    
         cap.release()
         out.release()
         # 构建访问URL
@@ -375,7 +378,7 @@ def upload_stream(request):
         }, status=200)
 
     except Exception as e:
-        traceback.print_exc()  # 打印错误堆栈，便于调试
+        traceback.print_exc()
         return Response({'error': f'检测失败: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
