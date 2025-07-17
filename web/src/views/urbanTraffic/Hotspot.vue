@@ -66,7 +66,7 @@ export default {
           min: 0,
           max: 10,
           left: 'left',
-          top: 'bottom',
+          top: '70px',
           text: ['高','低'],
           calculable: true,
           inRange: {
@@ -149,7 +149,7 @@ export default {
           min: 0,
           max: Math.max(10, data.length / 100),
           left: 'left',
-          top: 'bottom',
+          top: '70px', // 原为 'bottom'，改为距离底部约 70px
           text: ['高','低'],
           calculable: true,
           inRange: {
