@@ -111,6 +111,7 @@ function closeAlert() {
   localStorage.removeItem('intrusion_alert');
 }
 onMounted(() => {
+  localStorage.removeItem('intrusion_alert');
   fetchCaptcha()
 })
 
@@ -170,7 +171,7 @@ const handleLogin = async () => {
         window.dispatchEvent(new CustomEvent('updateUserPermission', { detail: response.data.permission }));
       }
       // 跳转首页，无需reload
-      router.push('/home')
+      router.push('/liveness')
     }
   } catch (error) {
     let msg = error.response?.data?.msg || error.message || '登录失败'
@@ -272,7 +273,8 @@ const handleEmailLogin = async () => {
         window.dispatchEvent(new CustomEvent('updateUserPermission', { detail: res.data.permission }));
       }
       localStorage.setItem('email', emailForm.value.email)
-      router.push('/home')
+      // 邮箱验证码登录成功后也跳转到/liveness
+      router.push('/liveness')
     }
   } catch (err) {
     let msg = err.response?.data?.msg || err.message || '登录失败'

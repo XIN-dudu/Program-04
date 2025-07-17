@@ -29,14 +29,23 @@
         </tbody>
       </table>
     </div>
+    <LivenessDetection
+      v-if="showLivenessDialog"
+      :dialog-mode="true"
+      @success="handleLivenessSuccess"
+      @close="handleLivenessClose"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
+import LivenessDetection from './LivenessDetection.vue'
 
 const users = ref([])
+const showLivenessDialog = ref(false)
+const pendingAction = ref(null)
 
 const fetchUsers = async () => {
   const res = await axios.get('/api/user_list/', {
@@ -46,7 +55,7 @@ const fetchUsers = async () => {
   users.value = res.data.users
 }
 
-const updatePermission = async (user) => {
+const actuallyUpdatePermission = async (user) => {
   await axios.post('/api/update_permission/', {
     username: localStorage.getItem('name'),
     user_id: user.id,
@@ -55,13 +64,33 @@ const updatePermission = async (user) => {
   fetchUsers()
 }
 
-const deleteUser = async (user) => {
+const actuallyDeleteUser = async (user) => {
   if (!confirm(`确定要删除用户 ${user.username} 吗？此操作不可恢复！`)) return
   await axios.post('/api/delete_user/', {
     username: localStorage.getItem('name'),
     user_id: user.id
   }, { withCredentials: true })
   fetchUsers()
+}
+
+const updatePermission = (user) => {
+  pendingAction.value = () => actuallyUpdatePermission(user)
+  showLivenessDialog.value = true
+}
+
+const deleteUser = (user) => {
+  pendingAction.value = () => actuallyDeleteUser(user)
+  showLivenessDialog.value = true
+}
+
+function handleLivenessSuccess() {
+  showLivenessDialog.value = false
+  if (pendingAction.value) pendingAction.value()
+  pendingAction.value = null
+}
+function handleLivenessClose() {
+  showLivenessDialog.value = false
+  pendingAction.value = null
 }
 
 onMounted(fetchUsers)

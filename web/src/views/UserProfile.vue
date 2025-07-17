@@ -11,7 +11,7 @@
       <div class="profile-info-card-light">
         <h2 class="profile-title">个人信息</h2>
         <div class="info-row-light"><span class="info-label-light">用户名</span><span class="info-value-center">{{ user.username }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
-        <div class="info-row-light"><span class="info-label-light">电子邮箱</span><span class="info-value-center">{{ user.email }}</span><button class="edit-btn-light" @click="showEditEmail = true">编辑</button></div>
+        <div class="info-row-light"><span class="info-label-light">电子邮箱</span><span class="info-value-center">{{ user.email }}</span><button class="edit-btn-light" @click="onEditEmail">编辑</button></div>
         <div class="info-row-light">
           <span class="info-label-light">手机号</span>
           <span class="info-value-center">{{ user.phone }}</span>
@@ -32,7 +32,7 @@
           </div>
         </div>
         <div class="info-row-light permission-row-fix"><span class="info-label-light">权限</span><span class="info-value-center permission-value">{{ permissionText }}</span><button class="edit-btn-light fixed-btn" disabled>固定</button></div>
-        <div class="info-row-light no-border info-row-password-btn"><button class="edit-btn-light left-btn" @click="showEditAll = true">修改密码</button></div>
+        <div class="info-row-light no-border info-row-password-btn"><button class="edit-btn-light left-btn" @click="onEditAll">修改密码</button></div>
       </div>
     </div>
     <!-- 编辑邮箱弹窗 -->
@@ -86,12 +86,22 @@
         </div>
       </div>
     </div>
+    <!-- 活体检测弹窗 -->
+    <LivenessDetection
+      v-if="showLivenessDialog"
+      :dialogMode="true"
+      :source="livenessSource"
+      @success="onLivenessSuccess"
+      @close="showLivenessDialog = false"
+    />
   </div>
 </template>
 
 <script>
 import axios from 'axios';
+import LivenessDetection from './LivenessDetection.vue';
 export default {
+  components: { LivenessDetection },
   data() {
     return {
       user: {},
@@ -107,6 +117,9 @@ export default {
       confirmPassword: '',
       showPhoneEdit: false,
       editPhone: '',
+      showLivenessDialog: false,
+      pendingAction: null,
+      livenessSource: '',
     }
   },
   computed: {
@@ -236,9 +249,35 @@ export default {
         this.showPhoneEdit = false;
       });
     },
+    // 拦截邮箱编辑
+    onEditEmail() {
+      this.pendingAction = 'editEmail';
+      this.livenessSource = '个人信息-修改邮箱';
+      this.showLivenessDialog = true;
+    },
+    // 拦截手机号编辑
     openPhoneEdit() {
-      this.editPhone = this.user.phone || '';
-      this.showPhoneEdit = true;
+      this.pendingAction = 'editPhone';
+      this.livenessSource = '个人信息-修改手机号';
+      this.showLivenessDialog = true;
+    },
+    // 拦截修改密码
+    onEditAll() {
+      this.pendingAction = 'editAll';
+      this.livenessSource = '个人信息-修改密码';
+      this.showLivenessDialog = true;
+    },
+    // 活体认证通过后执行原操作
+    onLivenessSuccess() {
+      this.showLivenessDialog = false;
+      if (this.pendingAction === 'editEmail') {
+        this.showEditEmail = true;
+      } else if (this.pendingAction === 'editPhone') {
+        this.showPhoneEdit = true;
+      } else if (this.pendingAction === 'editAll') {
+        this.showEditAll = true;
+      }
+      this.pendingAction = null;
     }
   }
 }
@@ -247,24 +286,25 @@ export default {
 <style scoped>
 .profile-bg-light {
   min-height: 100vh;
-  background: linear-gradient(135deg, #e8f0ff 0%, #f8fafc 100%);
+  background: #f4f4f4;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 60px;
+  padding-top: 48px;
 }
 .profile-card-light {
-  background: #fff;
-  border-radius: 22px;
-  box-shadow: 0 6px 32px rgba(0,0,0,0.10);
-  min-width: 420px;
-  max-width: 480px;
-  margin: 0 auto;
-  overflow: hidden;
+  background: linear-gradient(135deg, #fff 80%, #f6faff 100%);
+  border-radius: 28px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+  padding: 0 0 36px 0;
+  width: 420px;
+  margin-top: 0;
+  position: relative;
 }
 .profile-header-light {
-  background: linear-gradient(90deg, #ffb86c 0%, #ffd580 100%);
-  height: 110px;
+  background: linear-gradient(90deg, #ffb86c 60%, #ffe0b2 100%);
+  border-radius: 28px 28px 0 0;
+  height: 90px;
   position: relative;
 }
 .profile-banner-light {
@@ -276,19 +316,18 @@ export default {
 .profile-avatar-block {
   position: absolute;
   left: 50%;
-  top: 80px;
+  top: 60px;
   transform: translateX(-50%);
   z-index: 2;
 }
 .avatar-light {
-  width: 110px;
-  height: 110px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
-  border: 6px solid #fff;
-  background: #f4f4f4;
+  border: 5px solid #fff;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  background: #fff;
   object-fit: cover;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.13);
-  cursor: pointer;
 }
 .profile-nick-block-row {
   margin-left: 24px;
@@ -312,75 +351,62 @@ export default {
   align-items: center;
 }
 .edit-btn-light {
-  background: #1890ff;
-  color: #fff;
+  background: linear-gradient(90deg,#7ed6ff,#b2f0ff);
+  color: #007aff;
   border: none;
-  border-radius: 8px;
-  padding: 5px 18px;
-  font-size: 1em;
-  margin-left: 12px;
+  border-radius: 10px;
+  padding: 4px 18px;
+  font-size: 1rem;
+  font-weight: 500;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, color 0.2s;
+  margin-left: 8px;
 }
 .edit-btn-light:hover {
-  background: #40a9ff;
-  color: #fff;
+  background: linear-gradient(90deg,#4fc3f7,#81ecec);
+  color: #0051a8;
+}
+.edit-btn-light.fixed-btn {
+  background: #f5f6fa;
+  color: #bbb;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 .profile-info-card-light {
-  background: rgba(255,255,255,0.97);
-  border-radius: 18px;
-  margin: 60px 24px 24px 24px;
-  padding: 36px 24px 28px 24px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  margin-top: 60px;
+  padding: 32px 32px 0 32px;
+  background: rgba(255,255,255,0.98);
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 .profile-title {
-  font-size: 2em;
-  color: #222;
+  font-size: 2rem;
   font-weight: 700;
+  color: #222;
   margin-bottom: 28px;
-  text-align: left;
+  text-align: center;
   letter-spacing: 1px;
 }
 .info-row-light {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 0;
-  border-bottom: 1.5px solid #e0eafc;
-  font-size: 1.13em;
+  padding: 16px 0 12px 0;
+  font-size: 1.08rem;
+  border-bottom: 1px solid #f0f0f0;
 }
-.info-row-light:last-child {
+.info-row-light.no-border {
   border-bottom: none;
 }
 .info-label-light {
   color: #888;
-  width: 90px;
-  font-size: 1em;
-}
-.permission-row-fix {
-  display: flex;
-  align-items: center;
-}
-.permission-value {
-  font-size: 1em;
+  min-width: 80px;
   font-weight: 500;
-  color: #333;
-  margin-left: 0;
-  margin-right: 12px;
 }
-.fixed-btn {
-  opacity: 1;
-  background: #1890ff;
-  color: #fff;
-  cursor: not-allowed;
-  height: 36px;
-  padding: 5px 18px;
-  border-radius: 8px;
-  font-size: 1em;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.permission-row-fix .permission-value {
+  color: #007aff;
+  font-weight: 600;
 }
 .modify-btn {
   margin-left: 0;
@@ -392,60 +418,64 @@ export default {
 }
 .modal-mask-light {
   position: fixed;
-  left: 0; top: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.18);
   z-index: 9999;
+  left: 0; top: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.12);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .modal-content-light {
   background: #fff;
-  border-radius: 12px;
-  padding: 32px 28px 24px 28px;
-  min-width: 340px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 38px 48px 32px 48px;
+  min-width: 320px;
+  text-align: center;
+  animation: popin 0.2s;
+}
+@keyframes popin {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 .form-row-modal-light {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   margin-bottom: 18px;
+  gap: 10px;
 }
-.form-row-modal-light label {
-  color: #888;
-  width: 80px;
-}
-input[type="text"], input[type="password"], input[type="email"] {
-  padding: 7px 12px;
-  border: 1.5px solid #e0eafc;
-  border-radius: 7px;
-  width: 180px;
-  font-size: 1em;
-  margin-right: 10px;
-  background: #f8fafc;
-  color: #333;
-  transition: border 0.2s;
-}
-input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus {
-  border: 1.5px solid #1890ff;
+input[type="email"], input[type="password"], input[type="text"] {
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 1rem;
   outline: none;
+  transition: border 0.2s;
+  width: 60%;
+}
+input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focus {
+  border: 1.5px solid #007aff;
 }
 .btn-light {
-  background: #1890ff;
-  color: #fff;
+  background: #f5f6fa;
+  color: #007aff;
   border: none;
   border-radius: 8px;
   padding: 6px 18px;
-  font-size: 1em;
-  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
   margin-left: 8px;
-  transition: background 0.2s;
-}
-.btn-light:hover {
-  background: #40a9ff;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
 }
 .btn-light.cancel {
-  background: #bbb;
+  background: #f8d7da;
+  color: #c0392b;
+}
+.btn-light:hover {
+  background: #eaf3ff;
+  color: #0051a8;
 }
 .lower-nick-block {
   margin-top: 38px; /* 让用户名和按钮整体下移，贴近header底部 */
@@ -456,24 +486,26 @@ input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focu
   margin-top: 10px;
 }
 .left-btn {
-  margin-left: 0;
-  margin-top: 8px;
   width: 100%;
-  font-size: 1.08em;
+  margin: 0;
   padding: 10px 0;
-  border-radius: 8px;
-  background: #1890ff;
+  font-size: 1.1rem;
+  background: linear-gradient(90deg,#007aff,#7ed6ff);
   color: #fff;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(24,144,255,0.08);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  transition: background 0.2s;
+}
+.left-btn:hover {
+  background: linear-gradient(90deg,#0051a8,#4fc3f7);
 }
 .no-border {
   border-bottom: none !important;
 }
 .info-value-center {
-  flex: 1;
-  text-align: center;
-  font-size: 1.1em;
   color: #222;
+  font-weight: 600;
+  margin: 0 8px;
 }
 </style> 
