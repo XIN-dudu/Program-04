@@ -136,12 +136,14 @@ class Command(BaseCommand):
             )
             cursor = conn.cursor()
             
+            # 动态拼接表名
+            table_name = f"jn{target_datetime.month:02d}{target_datetime.day:02d}_baidu_coords"
             # 统计每小时载客出租车数量
-            sql = """
+            sql = f"""
                 SELECT 
                     HOUR(UTC) as hour,
                     COUNT(DISTINCT COMMADDR) as occupied_count
-                FROM jn0912_baidu_coords 
+                FROM {table_name}
                 WHERE DATE(UTC) = %s AND status = 1
                 GROUP BY HOUR(UTC)
                 ORDER BY hour

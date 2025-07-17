@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .views import road_speed_analysis
 
 urlpatterns = [
     path('road/upload', views.upload_image),
@@ -26,4 +27,6 @@ urlpatterns = [
     path('tasks/image/<int:image_id>/delete/', views.delete_task_image),
     path('tasks/<int:task_id>/mark_finished/', views.mark_finished),
     path('test', views.test_get),
+    path('api/road_speed_analysis/', road_speed_analysis),
+    path('road_speed_hourly/', views.road_speed_hourly),
 ]
