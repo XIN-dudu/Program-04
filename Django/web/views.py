@@ -31,6 +31,8 @@ from drf_yasg import openapi
 from rest_framework import serializers
 from django.db import connection
 import subprocess
+import re
+from datetime import datetime, timedelta
 
 # 简单内存验证码存储（生产建议用redis等）
 email_code_cache = {}
@@ -1018,44 +1020,86 @@ def update_permission(request):
 
 @api_view(['GET'])
 def points_api(request):
+    import re
+    from datetime import datetime, timedelta
     start = request.GET.get('start')
     end = request.GET.get('end')
     car = request.GET.get('car')
     limit = int(request.GET.get('limit', 200))
-    table = 'jn0912_baidu_coords'
 
-    sql = f"SELECT LAT, LON, UTC, COMMADDR, HEAD, TFLAG, status, SPEED FROM {table} WHERE 1=1"
-    params = []
-    if start:
-        sql += " AND UTC >= %s"
-        params.append(start)
-    if end:
-        sql += " AND UTC <= %s"
-        params.append(end)
-    if car:
-        sql += " AND COMMADDR = %s"
-        params.append(car)
-    sql += " ORDER BY UTC LIMIT %s"
-    params.append(limit)
+    def parse_date(date_str):
+        if not date_str:
+            return None
+        for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y/%m/%d %H:%M'):
+            try:
+                return datetime.strptime(date_str.strip(), fmt)
+            except Exception:
+                continue
+        raise ValueError(f'时间格式错误: {date_str}')
 
-    with connection.cursor() as cursor:
-        cursor.execute(sql, params)
-        rows = cursor.fetchall()
+    def get_table_names(start, end):
+        # start, end: 可能多种格式
+        if start:
+            start_date = parse_date(start[:10])
+        else:
+            start_date = datetime(2013, 9, 12)
+        if end:
+            end_date = parse_date(end[:10])
+        else:
+            end_date = datetime(2013, 9, 12)
+        tables = []
+        d = start_date
+        while d <= end_date:
+            table = f"jn{d.month:02d}{d.day:02d}_baidu_coords"
+            tables.append(table)
+            d += timedelta(days=1)
+        return tables
 
-    data = [
-        {
-            'lat': row[0],
-            'lon': row[1],
-            'time': row[2],
-            'car': row[3],
-            'head': row[4],
-            'tflag': row[5],
-            'status': row[6],
-            'speed': row[7]
-        }
-        for row in rows
-    ]
-    return Response(data)
+    tables = get_table_names(start, end)
+    results = []
+    total_fetched = 0
+    from django.db import connection
+    for table in tables:
+        if not re.match(r'^jn\d{4}_baidu_coords$', table):
+            continue
+        sql = f"SELECT LAT, LON, UTC, COMMADDR, HEAD, TFLAG, status, SPEED FROM {table} WHERE 1=1"
+        params = []
+        if start:
+            sql += " AND UTC >= %s"
+            params.append(start)
+        if end:
+            sql += " AND UTC <= %s"
+            params.append(end)
+        if car:
+            sql += " AND COMMADDR = %s"
+            params.append(car)
+        sql += " ORDER BY UTC LIMIT %s"
+        remain = limit - total_fetched
+        if remain <= 0:
+            break
+        params.append(remain)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+            for row in rows:
+                results.append({
+                    'lat': row[0],
+                    'lon': row[1],
+                    'time': row[2],
+                    'car': row[3],
+                    'head': row[4],
+                    'tflag': row[5],
+                    'status': row[6],
+                    'speed': row[7]
+                })
+            total_fetched += len(rows)
+            if total_fetched >= limit:
+                break
+        except Exception as e:
+            continue
+    results.sort(key=lambda x: x['time'])
+    return Response(results[:limit])
     
 @api_view(['POST'])
 def face_verify_one_to_one(request):

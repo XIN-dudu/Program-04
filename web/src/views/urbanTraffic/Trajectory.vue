@@ -5,11 +5,11 @@
         <h3>按时间查询 <span>⏰</span></h3>
         <div class="form-row">
           <label>起始时间：</label>
-          <input v-model="timeStart" type="datetime-local" />
+          <input v-model="timeStart" type="datetime-local" min="2013-09-12T00:00:00" max="2013-09-19T00:00:00" step="1" />
         </div>
         <div class="form-row">
           <label>终止时间：</label>
-          <input v-model="timeEnd" type="datetime-local" />
+          <input v-model="timeEnd" type="datetime-local" min="2013-09-12T00:00:00" max="2013-09-19T00:00:00" step="1" />
         </div>
         <div class="form-row">
           <label>最大点数：</label>
@@ -21,11 +21,11 @@
         <h3>按车辆查询 <span>🚗</span></h3>
         <div class="form-row">
           <label>起始时间：</label>
-          <input v-model="carStart" type="datetime-local" />
+          <input v-model="carStart" type="datetime-local" min="2013-09-12T00:00:00" max="2013-09-19T00:00:00" step="1" />
         </div>
         <div class="form-row">
           <label>终止时间：</label>
-          <input v-model="carEnd" type="datetime-local" />
+          <input v-model="carEnd" type="datetime-local" min="2013-09-12T00:00:00" max="2013-09-19T00:00:00" step="1" />
         </div>
         <div class="form-row">
           <label>车牌标识：</label>
@@ -139,8 +139,20 @@ export default {
       const d = new Date(dt);
       return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${d.getMinutes()}`;
     },
+    isTimeInRange(dt) {
+      if (!dt) return false;
+      const t = new Date(dt).getTime();
+      const min = new Date('2013-09-12T00:00:00').getTime();
+      const max = new Date('2013-09-19T00:00:00').getTime();
+      return t >= min && t <= max;
+    },
     async queryByTime() {
       if (!this.map) return;
+      // 校验时间范围
+      if ((this.timeStart && !this.isTimeInRange(this.timeStart)) || (this.timeEnd && !this.isTimeInRange(this.timeEnd))) {
+        showMsg('请选择2013-09-12 00:00:00到2013-09-19 00:00:00之间的时间！');
+        return;
+      }
       let params = [];
       if (this.timeStart) params.push(`start=${encodeURIComponent(this.formatTime(this.timeStart))}`);
       if (this.timeEnd) params.push(`end=${encodeURIComponent(this.formatTime(this.timeEnd))}`);
@@ -202,6 +214,11 @@ export default {
     async queryByCar() {
       if (!this.map) return;
       if (!this.carId) return;
+      // 校验时间范围
+      if ((this.carStart && !this.isTimeInRange(this.carStart)) || (this.carEnd && !this.isTimeInRange(this.carEnd))) {
+        showMsg('请选择2013-09-12 00:00:00到2013-09-19 00:00:00之间的时间！');
+        return;
+      }
       // 先查车牌号是否存在
       let carExist = false;
       try {
@@ -221,6 +238,7 @@ export default {
       if (this.carStart) params.push(`start=${encodeURIComponent(this.formatTime(this.carStart))}`);
       if (this.carEnd) params.push(`end=${encodeURIComponent(this.formatTime(this.carEnd))}`);
       if (this.carId) params.push(`car=${encodeURIComponent(this.carId)}`);
+      // 不加limit参数
       const url = `/api/points/?${params.join('&')}`;
       const found = await this.renderPoints(url, true);
       if (found === false) {

@@ -88,6 +88,10 @@
       <div v-show="currentView === 'road-speed'">
         <div ref="roadSpeedChart" style="width: 100%; height: 500px;"></div>
         <!-- 速度说明小圆点已删除 -->
+        <div v-if="loading && currentView === 'road-speed'" class="loading-overlay">
+          <div class="loading-spinner"></div>
+          <div class="loading-text">正在加载道路速度数据...</div>
+        </div>
       </div>
       <div v-if="loading && currentView === 'occupied-taxi'" class="loading-overlay">
         <div class="loading-spinner"></div>
@@ -151,7 +155,15 @@ export default {
       loading: false,
       weekFlowLoading: false,
       weatherLoading: false,
-      tripDistanceData: {},
+      tripDistanceData: {
+        summary: {
+          total_count: 7001034,
+          short_ratio: 40.5,
+          medium_ratio: 35.2,
+          long_ratio: 24.3,
+          avg_total_distance: 5.6
+        }
+      },
       tripDistanceLoading: false,
       roadSpeedChart: null, // 新增：道路速度图表实例
       occupiedDate: '2013-09-12', // 载客出租车数量当前选中日期
@@ -475,28 +487,9 @@ export default {
       this.tripDistanceLoading = false;
       await this.renderTripDistanceChart();
     },
-    async renderTripDistanceChart() {
+    renderTripDistanceChart() {
       if (this.chart) this.chart.clear();
-      this.tripDistanceLoading = true;
-      try {
-        const response = await fetch('/api/trip_distance_analysis/?start_date=2013-09-12&end_date=2013-09-12');
-        const data = await response.json();
-        if (data.error) {
-          console.error('获取路程分析数据失败:', data.error);
-          this.useSimulatedTripDistanceData();
-          return;
-        }
-        this.tripDistanceData = data;
-      } catch (error) {
-        console.error('API请求失败:', error);
-        this.useSimulatedTripDistanceData();
-      } finally {
-        this.tripDistanceLoading = false;
-      }
-      if (!this.tripDistanceData.summary) {
-        this.useSimulatedTripDistanceData();
-      }
-      // 饼状图数据
+      // 直接用 this.tripDistanceData.summary 渲染饼图
       const summary = this.tripDistanceData.summary;
       const pieData = [
         { value: summary.short_ratio, name: '短途(<4km)' },

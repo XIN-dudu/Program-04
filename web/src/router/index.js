@@ -23,7 +23,8 @@ const routes = [
       {
         path: 'shandongmap',
         component: () => import('@/views/urbanTraffic/ShandongMap.vue')
-      }
+      },
+
       // 已删除 weekflow 和 road 路由
     ]
   },
@@ -40,6 +41,7 @@ const routes = [
     name: 'UserManage',
     component: () => import('@/views/UserManage.vue')
   },
+
 ]
 
 const router = createRouter({
