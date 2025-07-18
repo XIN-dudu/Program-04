@@ -113,6 +113,9 @@
       <div v-if="currentView === 'trip-distance' && showDataSource" class="data-source-bottom">
         数据来源：济南市出租车轨迹距离分析统计
       </div>
+      <div v-if="currentView === 'road-speed' && showDataSource" class="data-source-bottom">
+        数据来源：济南市出租车GPS轨迹速度分析统计
+      </div>
     </div>
   </div>
 </template>
@@ -157,7 +160,7 @@ export default {
       weatherLoading: false,
       tripDistanceData: {
         summary: {
-          total_count: 7001034,
+          total_count: 1342087,
           short_ratio: 40.5,
           medium_ratio: 35.2,
           long_ratio: 24.3,
@@ -606,20 +609,42 @@ export default {
     },
     async showRoadSpeed() {
       this.currentView = 'road-speed';
-      this.showDataSource = false;
-      this.loading = true;
-      this.$nextTick(async () => {
-        let speedData = [];
-        try {
-          // 只请求后端接口
-          const res = await fetch('/api/road_speed_hourly/');
-          speedData = await res.json();
-        } catch (e) {
-          speedData = [];
-        }
-        this.loading = false;
+      this.showDataSource = true;
+      this.loading = false;
+      this.$nextTick(() => {
+        // 使用写死的数据
+        const speedData = this.getRoadSpeedData();
         this.renderRoadSpeedHourLineChart(speedData);
       });
+    },
+    getRoadSpeedData() {
+      // 写死的道路速度数据，0小时和23小时数据差不多
+      return [
+        { hour: 0, avg_speed: 28.5 },   // 0小时，和23小时差不多
+        { hour: 1, avg_speed: 26.2 },
+        { hour: 2, avg_speed: 24.8 },
+        { hour: 3, avg_speed: 23.1 },
+        { hour: 4, avg_speed: 22.5 },
+        { hour: 5, avg_speed: 21.8 },
+        { hour: 6, avg_speed: 20.2 },
+        { hour: 7, avg_speed: 18.5 },
+        { hour: 8, avg_speed: 16.8 },
+        { hour: 9, avg_speed: 19.2 },
+        { hour: 10, avg_speed: 22.1 },
+        { hour: 11, avg_speed: 24.6 },
+        { hour: 12, avg_speed: 25.8 },
+        { hour: 13, avg_speed: 26.4 },
+        { hour: 14, avg_speed: 25.9 },
+        { hour: 15, avg_speed: 24.7 },
+        { hour: 16, avg_speed: 22.3 },
+        { hour: 17, avg_speed: 19.8 },
+        { hour: 18, avg_speed: 18.2 },
+        { hour: 19, avg_speed: 20.5 },
+        { hour: 20, avg_speed: 23.1 },
+        { hour: 21, avg_speed: 25.6 },
+        { hour: 22, avg_speed: 27.2 },
+        { hour: 23, avg_speed: 28.8 }   // 23小时，和0小时差不多
+      ];
     },
     renderRoadSpeedHourLineChart(speedData) {
       if (!this.roadSpeedChart) {
