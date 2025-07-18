@@ -65,7 +65,7 @@
       <!-- 巨大红色警告弹窗 -->
       <div v-if="showBigAlert" class="big-alert-overlay">
         <div class="big-alert-box">
-          <h1>警告！检测到非法入侵</h1>
+          <h1 style="color:#e53935;">{{ alertMsg }}</h1>
           <button class="big-alert-close" @click="handleAlertClose">关闭</button>
         </div>
       </div>
@@ -105,6 +105,7 @@ export default {
       captureInterval: null,
       loading: false,
       showBigAlert: false,
+      alertMsg: '', // 新增：弹窗内容
       featureClosed: false,
       showResultDialog: false,
       internalSource: this.source || window.location.pathname,
@@ -198,6 +199,9 @@ export default {
       this.videoUrl = '';
       this.livenessResult = null;
     },
+    isInternalError(msg) {
+      return /服务器内部错误|网络异常|请联系管理员|internal server error|network error|服务异常|service error/i.test(msg || '');
+    },
     async uploadVideo() {
       this.loading = true;
       const blob = await fetch(this.videoUrl).then(r => r.blob());
@@ -207,7 +211,6 @@ export default {
       this.capturedFrames.forEach((img, idx) => {
         formData.append('frame' + idx, img, `frame${idx}.jpg`);
       });
-      // 保证source有值
       formData.append('source', this.internalSource);
       try {
         const response = await axios.post('/api/liveness_and_face_verify/', formData, {
@@ -229,20 +232,24 @@ export default {
             setTimeout(() => { this.$router.push('/home'); }, 1000);
           }
         } else {
-          this.finalResult = {
-            success: false,
-            msg: response.data.msg || '验证失败',
-            source: this.internalSource
-          };
-          this.showResultDialog = true;
+          if (this.isInternalError(response.data.msg)) {
+            // 内部错误只弹普通弹窗
+            this.finalResult = {
+              success: false,
+              msg: response.data.msg || '请求失败',
+              source: this.internalSource
+            };
+            this.showResultDialog = true;
+          } else {
+            // 只有安全失败才弹大红告警
+            this.triggerIntrusionAlert('intruder', response.data.msg || '警告！检测到非法入侵');
+          }
+          return;
         }
       } catch (e) {
-        this.finalResult = {
-          success: false,
-          msg: '请求失败',
-          source: this.internalSource
-        };
-        this.showResultDialog = true;
+        // 网络或后端服务异常
+        this.triggerIntrusionAlert('network');
+        return;
       } finally {
         this.loading = false;
       }
@@ -268,7 +275,6 @@ export default {
       this.startCamera();
     },
     async uploadImage() {
-      // 兼容：如果活体检测和人脸识别分两步
       const blob = await fetch(this.imageData).then(r => r.blob());
       const formData = new FormData();
       formData.append('image', blob, 'liveness.jpg');
@@ -276,7 +282,6 @@ export default {
         const response = await axios.post('/api/liveness_detection', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-        // 这里假设后端返回结构和上面一致
         if (response.data.liveness !== false && response.data.user) {
           this.finalResult = {
             success: true,
@@ -285,21 +290,36 @@ export default {
             msg: '验证通过'
           };
         } else {
-          this.finalResult = {
-            success: false,
-            msg: response.data.msg || '身份验证失败'
-          };
+          if (this.isInternalError(response.data.msg)) {
+            // 内部错误只弹普通弹窗
+            this.finalResult = {
+              success: false,
+              msg: response.data.msg || '请求失败',
+              source: this.internalSource
+            };
+            this.showResultDialog = true;
+          } else {
+            // 只有安全失败才弹大红告警
+            this.triggerIntrusionAlert('intruder', response.data.msg || '警告！检测到非法入侵');
+          }
+          return;
         }
         this.step = 3;
       } catch (error) {
-        this.finalResult = { success: false, msg: error.response?.data?.msg || '检测失败' };
-        this.step = 3;
+        // 网络或后端服务异常
+        this.triggerIntrusionAlert('network');
+        return;
       }
     },
-    // 检测到入侵时调用：
-    triggerIntrusionAlert() {
+    // 检测到入侵或网络异常时调用：
+    triggerIntrusionAlert(type = 'intruder', msg = '') {
       localStorage.setItem('intrusion_alert', '1');
       this.showBigAlert = true;
+      if (type === 'network') {
+        this.alertMsg = '网络或服务器异常，请重试';
+      } else {
+        this.alertMsg = msg || '警告！检测到非法入侵';
+      }
     },
     resetAll() {
       this.showResultDialog = false; // 关闭结果弹窗
@@ -442,7 +462,7 @@ export default {
 .big-alert-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(255,0,0,0.08);
+  background: rgba(255,0,0,0.13);
   z-index: 9999;
   display: flex;
   align-items: center;
@@ -450,21 +470,39 @@ export default {
 }
 .big-alert-box {
   background: #fff;
-  border-radius: 18px;
-  box-shadow: 0 8px 32px rgba(255,0,0,0.13), 0 1.5px 4px rgba(30,40,90,0.06);
-  padding: 38px 48px;
+  border-radius: 32px;
+  box-shadow: 0 16px 64px rgba(255,0,0,0.18), 0 3px 12px rgba(30,40,90,0.10);
+  padding: 64px 80px;
   text-align: center;
+  min-width: 520px;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.big-alert-box h1 {
+  font-size: 3.2rem;
+  font-weight: 900;
+  color: #e53935;
+  margin-bottom: 32px;
+  letter-spacing: 2px;
 }
 .big-alert-close {
-  margin-top: 18px;
+  margin-top: 32px;
   background: #e53935;
   color: #fff;
   border: none;
-  border-radius: 8px;
-  padding: 8px 24px;
-  font-size: 1.08rem;
-  font-weight: 600;
+  border-radius: 12px;
+  padding: 16px 48px;
+  font-size: 1.5rem;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 2px 8px rgba(229,57,53,0.12);
+  transition: background 0.18s;
+}
+.big-alert-close:hover {
+  background: #b71c1c;
 }
 .loading-tip-mac {
   color: #1976d2;

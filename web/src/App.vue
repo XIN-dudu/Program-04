@@ -22,6 +22,11 @@
         <div class="user-section">
           <router-link v-if="isAdmin" to="/user-manage" class="logo-text" style="margin-right:18px;">用户管理</router-link>
           <router-link v-if="isAdmin" to="/maintaince" class="logo-text" style="margin-right:18px;">维修分配</router-link>
+          <!-- 管理员入侵告警铃铛 -->
+          <div v-if="isAdmin" class="nav-bell" @click="showAlertDialog = true">
+            <svg class="bell-icon" viewBox="0 0 24 24"><path d="M12 2C9.243 2 7 4.243 7 7v2.382C7 10.271 6.632 11.104 6.025 11.707L4.293 13.439A.997.997 0 0 0 4 14.172V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2.828a.997.997 0 0 0-.293-.733l-1.732-1.732A2.997 2.997 0 0 1 17 9.382V7c0-2.757-2.243-5-5-5zm0 18c-1.104 0-2-.896-2-2h4c0 1.104-.896 2-2 2z"/></svg>
+            <span v-if="hasIntrusionAlert" class="red-dot"></span>
+          </div>
           <router-link to="/profile" class="username clickable">{{ username }}</router-link>
           <button @click="logout" class="logout-btn">退出</button>
           <router-link v-if="isRepairMan" to="/repair" class="logo-text" style="margin-right:18px;">维修任务</router-link>
@@ -33,6 +38,14 @@
       <main>
         <router-view />
       </main>
+    </div>
+    <!-- 全局入侵者弹窗 -->
+    <div v-if="showAlertDialog" class="global-alert-dialog-mask">
+      <div class="global-alert-dialog-box">
+        <h1 style="color:#e53935;font-size:2.3rem;">检测到入侵者</h1>
+        <div style="font-size:1.25rem;margin:22px 0;">请及时查看系统日志！</div>
+        <button class="global-alert-close" @click="closeAlertDialog">我知道了</button>
+      </div>
     </div>
   </div>
 </template>
@@ -99,6 +112,42 @@ onUnmounted(() => {
 });
 const isAdmin = computed(() => userPermissionRef.value == '2');
 const isRepairMan = computed(() => userPermissionRef.value == '1');
+
+// 入侵告警全局铃铛和弹窗
+import { onBeforeUnmount } from 'vue';
+const hasIntrusionAlert = ref(false);
+const showAlertDialog = ref(false);
+let lastIntrusionId = null;
+let pollTimer = null;
+function closeAlertDialog() {
+  showAlertDialog.value = false;
+  hasIntrusionAlert.value = false;
+}
+async function pollIntrusionLog() {
+  try {
+    const res = await axios.get('/api/logs/', {
+      params: { level: 'warning', action: '入侵者告警' },
+      withCredentials: true
+    });
+    if (res.data && res.data.length > 0) {
+      const latest = res.data[0];
+      if (!lastIntrusionId || latest.id !== lastIntrusionId) {
+        hasIntrusionAlert.value = true;
+        showAlertDialog.value = true;
+        lastIntrusionId = latest.id;
+      }
+    }
+  } catch {}
+}
+onMounted(() => {
+  if (isAdmin.value) {
+    pollIntrusionLog();
+    pollTimer = setInterval(pollIntrusionLog, 30000);
+  }
+});
+onBeforeUnmount(() => {
+  if (pollTimer) clearInterval(pollTimer);
+});
 
 const logout = () => {
   localStorage.removeItem('name');
@@ -399,5 +448,79 @@ const logout = () => {
   border-radius: 4px;
   font-size: 1rem;
   box-sizing: border-box;
+}
+.nav-bell {
+  position: relative;
+  margin-right: 18px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: #fff6f6;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(229,57,53,0.08);
+  transition: box-shadow 0.18s;
+}
+.nav-bell:hover {
+  box-shadow: 0 4px 16px rgba(229,57,53,0.18);
+  background: #ffeaea;
+}
+.bell-icon {
+  width: 28px;
+  height: 28px;
+  fill: #e53935;
+  filter: drop-shadow(0 0 2px #fff3f3);
+}
+.red-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 13px;
+  height: 13px;
+  background: #e53935;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 6px #e53935;
+  z-index: 2;
+}
+.global-alert-dialog-mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,0,0,0.13);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.global-alert-dialog-box {
+  background: #fff;
+  border-radius: 32px;
+  box-shadow: 0 16px 64px rgba(255,0,0,0.18), 0 3px 12px rgba(30,40,90,0.10);
+  padding: 64px 80px;
+  text-align: center;
+  min-width: 520px;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.global-alert-close {
+  margin-top: 32px;
+  background: #e53935;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 16px 48px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(229,57,53,0.12);
+  transition: background 0.18s;
+}
+.global-alert-close:hover {
+  background: #b71c1c;
 }
 </style>

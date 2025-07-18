@@ -1291,8 +1291,11 @@ def log_list(request):
     # 序列化
     serializer = LogSerializer(page, many=True)
 
+    # 如果没有分页参数，直接返回所有日志数组（兼容前端直接res.data为数组的用法）
+    if not request.query_params.get('page') and not request.query_params.get('page_size'):
+        return Response(serializer.data)
+
     # 返回分页响应
-    # return paginator.get_paginated_response(serializer.data)
     return Response({
         'results': serializer.data,
         'current_page': paginator.page.number,
