@@ -753,12 +753,14 @@ def assign_task(request, task_id):
         RepairAssignment.objects.filter(road_record=task).delete()
         print(f"[assign_task] 已删除原有分配")
         # 批量分配
+        valid_workers = []
         for uid in ids:
             try:
                 print(f"[assign_task] 分配给维修工ID: {uid}")
                 worker = UserProfile.objects.get(pk=uid, permission=1)
                 RepairAssignment.objects.create(road_record=task, worker=worker)
                 print(f"[assign_task] 分配成功: {uid}")
+                valid_workers.append(worker)
             except UserProfile.DoesNotExist:
                 print(f"[assign_task] 维修工不存在或权限不符: {uid}")
                 continue
@@ -773,7 +775,8 @@ def assign_task(request, task_id):
                 log_user = UserProfile.objects.get(username=username)
             except UserProfile.DoesNotExist:
                 log_user = None
-        create_log(request, log_user, 'info', '维修任务分配', f'任务ID: {task_id}, 分配给: {ids}')
+        usernames = [w.username for w in valid_workers]
+        create_log(request, log_user, 'info', '维修任务分配', f'任务ID: {task_id}, 分配给: {usernames}')
         print(f"[assign_task] 日志已记录")
     except Exception as e:
         print(f"[assign_task] 分配流程异常: {e}")

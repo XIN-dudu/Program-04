@@ -47,11 +47,13 @@
         :data="logs"
         border
         style="width: 100%;"
-        :default-sort="{ prop: 'timestamp', order: '' }"
+        :default-sort="{ prop: 'timestamp', order: 'descending' }"
+        :sort-orders="['descending', 'ascending']"
         highlight-current-row
         size="large"
         empty-text="暂无日志数据"
         @sort-change="handleSortChange"
+        ref="logTable"
       >
         <el-table-column prop="user.username" label="用户" width="120" :show-overflow-tooltip="true" />
         <el-table-column prop="level" label="级别" width="100">
@@ -138,12 +140,20 @@
   const currentVideoUrl = ref('')
   const sortOrder = ref('')
   const sortField = ref('')
+  const logTable = ref(null)
 
   const handleSortChange = ({ prop, order }) => {
+    if (prop !== 'timestamp') return
+    if (order === null || order === '') {
+      // 如果变成未排序，强制切换为升序
+      logTable.value.sort('timestamp', 'ascending')
+      sortField.value = 'timestamp'
+      sortOrder.value = 'asc'
+      fetchLogs(1)
+      return
+    }
     sortField.value = prop
-    if (order === 'ascending') sortOrder.value = 'asc'
-    else if (order === 'descending') sortOrder.value = 'desc'
-    else sortOrder.value = ''
+    sortOrder.value = order === 'ascending' ? 'asc' : 'desc'
     fetchLogs(1)
   }
   
@@ -213,7 +223,13 @@
   }
   
   onMounted(() => {
-    fetchLogs()
+    sortField.value = 'timestamp'
+    sortOrder.value = 'desc'
+    // 强制高亮降序图标（可选，通常default-sort已生效）
+    if (logTable.value) {
+      logTable.value.sort('timestamp', 'descending')
+    }
+    fetchLogs(1)
   })
   </script>
   
